@@ -1,4 +1,5 @@
 import { MenuItem, Location, SaleTransaction } from "../types/model";
+
 const sampleMenuItems: MenuItem[] = [
   {
     id: "ITEM-PICANHA-250",
@@ -37,18 +38,19 @@ const sampleMenuItems: MenuItem[] = [
     status: "Active",
   },
 ];
+
 const sampleLocations: Location[] = [
   {
     id: "LOC-MEDELLIN-01",
-    name: "Brasaland Medellín Centro",
-    city: "Medellín",
+    name: "Brasaland Medellin Centro",
+    city: "Medellin",
     country: "Colombia",
     openingYear: 2008,
     seatingCapacity: 80,
     staffCount: 12,
     monthlyRentCost: { USD: 1500, COP: 6000000 },
     averageMonthlyUtilities: { USD: 400, COP: 1600000 },
-    manager: "Carlos Jiménez",
+    manager: "Carlos Jimenez",
     status: "Active",
   },
   {
@@ -65,6 +67,7 @@ const sampleLocations: Location[] = [
     status: "Active",
   },
 ];
+
 const sampleSales: SaleTransaction[] = [
   {
     id: "TXN-2024-15482",
@@ -74,7 +77,7 @@ const sampleSales: SaleTransaction[] = [
     totalPrice: { USD: 37.0, COP: 148000 },
     paymentMethod: "Credit card",
     timestamp: new Date("2024-03-15T19:30:00"),
-    waiterName: "María González",
+    waiterName: "Maria Gonzalez",
   },
   {
     id: "TXN-2024-15483",
@@ -87,8 +90,5 @@ const sampleSales: SaleTransaction[] = [
     waiterName: "John Smith",
   },
 ];
-export {
-  sampleMenuItems,
-  sampleLocations,
-  sampleSales
-};
+
+export { sampleMenuItems, sampleLocations, sampleSales };
