@@ -63,6 +63,19 @@ export default function BackofficeHomePage() {
         </div>
       </section>
 
+      <section className="rounded-2xl border border-emerald-300/30 bg-emerald-950/20 p-5">
+        <h2 className="text-xl font-bold text-white">Módulo de incidencias de postventa</h2>
+        <p className="mt-2 max-w-3xl text-sm text-slate-200">
+          Carga un CSV interno para validar registros corruptos, calcular métricas y exportar el resumen en formato CSV.
+        </p>
+        <a
+          href="/backoffice/incidencias"
+          className="mt-4 inline-flex rounded-full bg-emerald-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900 transition hover:bg-emerald-200"
+        >
+          Abrir analizador de incidencias
+        </a>
+      </section>
+
       <section id="dashboard" className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4">
