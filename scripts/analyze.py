@@ -16,9 +16,9 @@ DEFAULT_CONTEXT = ROOT / "data" / "process" / "incidencias_contexto.json"
 DEFAULT_EXPECTED = ROOT / "data" / "eval" / "incidencias_expected.json"
 
 DEFAULT_RULES = {
-	"required_fields": ["incidente_id", "cliente_id", "categoria", "estado"],
+	"required_fields": ["incidente_id", "cliente_id", "categoria", "estado", "fecha_creacion"],
 	"allowed_categories": ["queja", "solicitud", "fallo_operativo"],
-	"allowed_states": ["abierto", "cerrado", "descartado"],
+	"allowed_states": ["abierto", "en_proceso", "resuelto", "cerrado"],
 }
 
 
@@ -242,6 +242,16 @@ def print_summary(result: dict[str, Any], csv_path: Path, mismatches: list[str])
 	]
 	print_table("Registros invalidos por tipo de problema", invalid_rows)
 
+	print("\nDetalle de registros invalidos")
+	print("-" * 72)
+	if not result["invalid_rows"]:
+		print("No se detectaron registros invalidos.")
+	else:
+		for row in result["invalid_rows"]:
+			motivos = ", ".join(row["motivos"])
+			incidente = row["incidente_id"] or "(sin incidente_id)"
+			print(f"Linea {row['linea_csv']}: {incidente} -> {motivos}")
+
 	category_rows = [
 		(category, str(count))
 		for category, count in sorted(summary["total_por_categoria"].items())
@@ -303,10 +313,29 @@ def rows_for_export(result: dict[str, Any], mismatches: list[str]) -> list[tuple
 
 
 def export_results_csv(path: Path, rows: list[tuple[str, str]]) -> None:
+	path.parent.mkdir(parents=True, exist_ok=True)
 	with path.open("w", encoding="utf-8", newline="") as file:
 		writer = csv.writer(file)
 		writer.writerow(["metrica", "valor"])
 		writer.writerows(rows)
+
+
+def build_api_payload(result: dict[str, Any], mismatches: list[str]) -> dict[str, Any]:
+	summary = result["summary"]
+	return {
+		"contexto": {
+			"required_fields": result["rules"]["required_fields"],
+			"allowed_categories": result["rules"]["allowed_categories"],
+			"allowed_states": result["rules"]["allowed_states"],
+		},
+		"resumen": summary,
+		"invalidos_por_tipo": result["invalid_reasons"],
+		"invalidos": result["invalid_rows"],
+		"validacion_esperada": {
+			"coincide": not mismatches,
+			"diferencias": mismatches,
+		},
+	}
 
 
 def main() -> int:
@@ -324,6 +353,23 @@ def main() -> int:
 		default=DEFAULT_EXPECTED,
 		help="Ruta al expected (JSON con metricas esperadas)",
 	)
+	parser.add_argument(
+		"--json-output",
+		type=Path,
+		default=None,
+		help="Ruta para guardar salida JSON estructurada",
+	)
+	parser.add_argument(
+		"--export-csv-path",
+		type=Path,
+		default=None,
+		help="Ruta de exportacion CSV en modo no interactivo",
+	)
+	parser.add_argument(
+		"--no-prompt",
+		action="store_true",
+		help="No pedir confirmacion interactiva al final",
+	)
 	args = parser.parse_args()
 
 	if not args.csv_path.exists():
@@ -337,16 +383,26 @@ def main() -> int:
 	# Soporta expected plano o expected anidado como {"summary": {...}}
 	expected_summary = expected_payload.get("summary", expected_payload)
 	mismatches = compare_expected(result["summary"], expected_summary) if expected_summary else []
+	payload = build_api_payload(result, mismatches)
 
 	print_summary(result, args.csv_path, mismatches)
 
-	choice = input("¿Deseas exportar los resultados a CSV? [s / n] ").strip().lower()
-	if choice == "s":
-		output_path = Path("results.csv")
-		export_results_csv(output_path, rows_for_export(result, mismatches))
-		print(f"Resultados exportados en: {output_path.resolve()}")
+	if args.json_output is not None:
+		args.json_output.parent.mkdir(parents=True, exist_ok=True)
+		args.json_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+	if args.no_prompt:
+		if args.export_csv_path is not None:
+			export_results_csv(args.export_csv_path, rows_for_export(result, mismatches))
+			print(f"Resultados exportados en: {args.export_csv_path.resolve()}")
 	else:
-		print("Exportacion omitida.")
+		choice = input("¿Deseas exportar los resultados a CSV? [s / n] ").strip().lower()
+		if choice == "s":
+			output_path = Path("results.csv")
+			export_results_csv(output_path, rows_for_export(result, mismatches))
+			print(f"Resultados exportados en: {output_path.resolve()}")
+		else:
+			print("Exportacion omitida.")
 
 	return 0 if not mismatches else 2
 
