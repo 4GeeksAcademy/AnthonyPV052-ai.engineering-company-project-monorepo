@@ -69,7 +69,7 @@ export default function BackofficeHomePage() {
           Carga un CSV interno para validar registros corruptos, calcular métricas y exportar el resumen en formato CSV.
         </p>
         <a
-          href="/backoffice/incidencias"
+          href="/backoffice/incidents"
           className="mt-4 inline-flex rounded-full bg-emerald-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900 transition hover:bg-emerald-200"
         >
           Abrir analizador de incidencias
