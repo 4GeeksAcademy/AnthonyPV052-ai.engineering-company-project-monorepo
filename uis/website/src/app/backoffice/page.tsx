@@ -76,6 +76,19 @@ export default function BackofficeHomePage() {
         </a>
       </section>
 
+      <section className="rounded-2xl border border-amber-300/30 bg-amber-950/20 p-5">
+        <h2 className="text-xl font-bold text-white">Directorio de proveedores</h2>
+        <p className="mt-2 max-w-3xl text-sm text-slate-200">
+          Consulta y gestiona proveedores por país y categoría, actualiza tarifas y controla estados activo/suspendido.
+        </p>
+        <a
+          href="/backoffice/suppliers"
+          className="mt-4 inline-flex rounded-full bg-amber-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900 transition hover:bg-amber-200"
+        >
+          Abrir directorio de proveedores
+        </a>
+      </section>
+
       <section id="dashboard" className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4">
