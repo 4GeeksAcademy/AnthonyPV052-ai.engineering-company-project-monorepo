@@ -69,6 +69,14 @@ export default function Navbar({ mode = "home" }: NavbarProps) {
                   Formulario
                 </Link>
               </li>
+              <li>
+                <Link
+                  href="/backoffice/incidents"
+                  className="block rounded-lg px-3 py-2 transition hover:bg-white/10"
+                >
+                  Incidencias
+                </Link>
+              </li>
             </ul>
           </nav>
         </details>
@@ -95,6 +103,12 @@ export default function Navbar({ mode = "home" }: NavbarProps) {
             className="rounded-full bg-ember-600 px-5 py-2.5 font-semibold text-white transition hover:bg-ember-700 [text-shadow:_2px_2px_0_#000]"
           >
             Formulario
+          </Link>
+          <Link
+            href="/backoffice/incidents"
+            className="rounded-full border border-white/25 px-5 py-2.5 font-semibold text-white transition hover:bg-white/10"
+          >
+            Incidencias
           </Link>
         </nav>
       </div>

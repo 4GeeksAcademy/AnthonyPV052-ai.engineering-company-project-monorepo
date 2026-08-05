@@ -1,0 +1,17 @@
+{
+  "total_registros": 100,
+  "registros_validos": 88,
+  "registros_invalidos": 12,
+  "incidencias_por_categoria": {
+    "queja": 30,
+    "solicitud": 28,
+    "fallo_operativo": 30
+  },
+  "incidencias_por_estado": {
+    "abierto": 20,
+    "en_proceso": 22,
+    "resuelto": 24,
+    "cerrado": 22
+  },
+  "tiempo_promedio_resolucion_horas": 19.18
+}
