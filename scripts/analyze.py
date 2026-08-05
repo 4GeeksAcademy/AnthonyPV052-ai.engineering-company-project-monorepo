@@ -21,6 +21,41 @@ DEFAULT_RULES = {
 	"allowed_states": ["abierto", "en_proceso", "resuelto", "cerrado"],
 }
 
+FIELD_ALIASES: dict[str, list[str]] = {
+	"incidente_id": ["incidente_id", "incident_id"],
+	"cliente_id": ["cliente_id", "customer_id"],
+	"categoria": ["categoria", "category"],
+	"estado": ["estado", "status"],
+	"fecha_creacion": ["fecha_creacion", "date"],
+	"tiempo_resolucion_horas": ["tiempo_resolucion_horas", "resolution_time_hours"],
+}
+
+CATEGORY_NORMALIZATION: dict[str, str] = {
+	"queja": "queja",
+	"customer_complaint": "queja",
+	"food_quality": "queja",
+	"solicitud": "solicitud",
+	"request": "solicitud",
+	"service_request": "solicitud",
+	"fallo_operativo": "fallo_operativo",
+	"supply": "fallo_operativo",
+	"equipment": "fallo_operativo",
+	"staff": "fallo_operativo",
+}
+
+STATE_NORMALIZATION: dict[str, str] = {
+	"abierto": "abierto",
+	"open": "abierto",
+	"en_proceso": "en_proceso",
+	"in_progress": "en_proceso",
+	"resuelto": "resuelto",
+	"resolved": "resuelto",
+	"cerrado": "cerrado",
+	"closed": "cerrado",
+	"descartado": "descartado",
+	"discarded": "descartado",
+}
+
 
 def load_json_if_exists(path: Path) -> dict[str, Any] | None:
 	if not path.exists():
@@ -65,12 +100,42 @@ def get_satisfaction_field(headers: list[str]) -> str | None:
 		"satisfaccion",
 		"puntuacion_satisfaccion",
 		"score_satisfaccion",
+		"satisfaction_score",
 	]
 	lowered = {header.lower(): header for header in headers}
 	for candidate in candidates:
 		if candidate in lowered:
 			return lowered[candidate]
 	return None
+
+
+def resolve_schema(headers: list[str]) -> dict[str, str | None]:
+	header_lookup = {header.strip().lower(): header for header in headers}
+	resolved: dict[str, str | None] = {}
+	for canonical, aliases in FIELD_ALIASES.items():
+		resolved[canonical] = None
+		for alias in aliases:
+			if alias.lower() in header_lookup:
+				resolved[canonical] = header_lookup[alias.lower()]
+				break
+	return resolved
+
+
+def row_value(row: dict[str, str], resolved_schema: dict[str, str | None], canonical: str) -> str:
+	field_name = resolved_schema.get(canonical)
+	if field_name is None:
+		return ""
+	return (row.get(field_name) or "").strip()
+
+
+def normalize_category(value: str) -> str:
+	normalized = value.strip().lower()
+	return CATEGORY_NORMALIZATION.get(normalized, normalized)
+
+
+def normalize_state(value: str) -> str:
+	normalized = value.strip().lower()
+	return STATE_NORMALIZATION.get(normalized, normalized)
 
 
 def analyze(csv_path: Path, rules: dict[str, list[str]]) -> dict[str, Any]:
@@ -84,21 +149,29 @@ def analyze(csv_path: Path, rules: dict[str, list[str]]) -> dict[str, Any]:
 		rows = list(reader)
 
 	satisfaction_field = get_satisfaction_field(headers)
+	resolved_schema = resolve_schema(headers)
+	optional_required_fields: set[str] = set()
+	if resolved_schema.get("cliente_id") == "customer_id":
+		# En el esquema Brasaland customer_id puede venir vacío por anonimización.
+		optional_required_fields.add("cliente_id")
 
 	invalid_rows: list[dict[str, Any]] = []
 	valid_rows: list[dict[str, str]] = []
 	invalid_reason_counter: Counter[str] = Counter()
+	allowed_states = set(allowed_states) | {"descartado"}
 
 	for line_number, row in enumerate(rows, start=2):
 		reasons: list[str] = []
 
 		for field in required_fields:
-			if not (row.get(field) or "").strip():
+			if field in optional_required_fields:
+				continue
+			if not row_value(row, resolved_schema, field):
 				reasons.append(f"campo_faltante:{field}")
 
-		category = (row.get("categoria") or "").strip()
-		state = (row.get("estado") or "").strip()
-		creation_date = (row.get("fecha_creacion") or "").strip()
+		category = normalize_category(row_value(row, resolved_schema, "categoria"))
+		state = normalize_state(row_value(row, resolved_schema, "estado"))
+		creation_date = row_value(row, resolved_schema, "fecha_creacion")
 
 		if category and category not in allowed_categories:
 			reasons.append("categoria_fuera_de_rango")
@@ -109,7 +182,7 @@ def analyze(csv_path: Path, rules: dict[str, list[str]]) -> dict[str, Any]:
 		if creation_date and not is_valid_iso_date(creation_date):
 			reasons.append("fecha_creacion_invalida")
 
-		resolution_raw = (row.get("tiempo_resolucion_horas") or "").strip()
+		resolution_raw = row_value(row, resolved_schema, "tiempo_resolucion_horas")
 		if resolution_raw:
 			parsed = parse_float(resolution_raw)
 			if parsed is None:
@@ -130,16 +203,18 @@ def analyze(csv_path: Path, rules: dict[str, list[str]]) -> dict[str, Any]:
 			invalid_rows.append(
 				{
 					"linea_csv": line_number,
-					"incidente_id": row.get("incidente_id", ""),
+					"incidente_id": row_value(row, resolved_schema, "incidente_id"),
 					"motivos": reasons,
 				}
 			)
 			invalid_reason_counter.update(reasons)
 		else:
+			row["__categoria_normalizada"] = category
+			row["__estado_normalizado"] = state
 			valid_rows.append(row)
 
-	by_category = Counter((row.get("categoria") or "").strip() for row in valid_rows)
-	by_state = Counter((row.get("estado") or "").strip() for row in valid_rows)
+	by_category = Counter((row.get("__categoria_normalizada") or "").strip() for row in valid_rows)
+	by_state = Counter((row.get("__estado_normalizado") or "").strip() for row in valid_rows)
 
 	target_states = ["abierto", "cerrado", "descartado"]
 	state_totals = {state: by_state.get(state, 0) for state in target_states}
@@ -147,7 +222,7 @@ def analyze(csv_path: Path, rules: dict[str, list[str]]) -> dict[str, Any]:
 	satisfaction_values: list[float] = []
 	if satisfaction_field is not None:
 		for row in valid_rows:
-			if (row.get("estado") or "").strip() != "cerrado":
+			if (row.get("__estado_normalizado") or "").strip() != "cerrado":
 				continue
 			value = parse_float(row.get(satisfaction_field, ""))
 			if value is not None:
@@ -162,10 +237,10 @@ def analyze(csv_path: Path, rules: dict[str, list[str]]) -> dict[str, Any]:
 	# Métrica legacy para compatibilidad con expected previos.
 	resolution_values: list[float] = []
 	for row in valid_rows:
-		state = (row.get("estado") or "").strip()
+		state = (row.get("__estado_normalizado") or "").strip()
 		if state not in {"cerrado", "resuelto"}:
 			continue
-		value = parse_float((row.get("tiempo_resolucion_horas") or "").strip())
+		value = parse_float(row_value(row, resolved_schema, "tiempo_resolucion_horas"))
 		if value is not None:
 			resolution_values.append(value)
 
