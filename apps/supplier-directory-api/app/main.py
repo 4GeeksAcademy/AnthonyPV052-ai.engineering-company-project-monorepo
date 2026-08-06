@@ -29,6 +29,7 @@ app.add_middleware(
         "http://localhost:4011",
         "http://127.0.0.1:4011",
     ],
+    allow_origin_regex=r"https://.*\.(github\.dev|app\.github\.dev)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

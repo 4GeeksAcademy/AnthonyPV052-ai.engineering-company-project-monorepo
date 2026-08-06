@@ -2,7 +2,16 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_SUPPLIERS_API_URL ?? "http://localhost:8000";
+function resolveApiBase(): string {
+  if (process.env.NEXT_PUBLIC_SUPPLIERS_API_URL) {
+    return process.env.NEXT_PUBLIC_SUPPLIERS_API_URL.replace(/\/suppliers\/?$/, "");
+  }
+
+  // Use Next.js rewrite proxy to avoid cross-origin tunnel/CORS issues in Codespaces.
+  return "/api";
+}
+
+const API_BASE = resolveApiBase();
 
 const VALID_CATEGORIES = [
   "carne",
@@ -55,13 +64,18 @@ const EMPTY_FORM: SupplierCreateForm = {
 };
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new Error(`No se pudo conectar con la API (${API_BASE}). Verifica que esté levantada y permitida por CORS.`);
+  }
 
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
