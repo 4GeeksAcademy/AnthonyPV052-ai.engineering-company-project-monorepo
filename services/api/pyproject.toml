@@ -7,7 +7,10 @@ dependencies = [
   "fastapi>=0.111.0",
   "uvicorn>=0.30.0",
   "tinydb>=4.8.0",
-  "pydantic[email]>=2.8.0"
+  "pydantic[email]>=2.8.0",
+  "python-jose[cryptography]>=3.5.0",
+  "passlib[bcrypt]>=1.7.4",
+  "bcrypt==4.0.1",
 ]
 
 [project.scripts]
@@ -22,4 +25,13 @@ package = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
-include = ["seed.py", "main.py", "models.py", "database.py", "routes/*.py"]
+include = [
+  "seed.py",
+  "main.py",
+  "models.py",
+  "database.py",
+  "security.py",
+  "auth_models.py",
+  "users_service.py",
+  "routes/*.py",
+]

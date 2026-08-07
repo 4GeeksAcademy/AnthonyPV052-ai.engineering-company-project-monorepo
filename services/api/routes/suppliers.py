@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from tinydb import Query as TinyQuery
 
 from database import get_db
@@ -14,8 +14,9 @@ from models import (
     SupplierStatusPatch,
     SupplierStored,
 )
+from security import get_current_user
 
-router = APIRouter(tags=["suppliers"])
+router = APIRouter(tags=["suppliers"], dependencies=[Depends(get_current_user)])
 
 
 def _to_response(doc_id: int, doc: dict) -> SupplierResponse:
