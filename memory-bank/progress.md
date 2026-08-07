@@ -11,3 +11,4 @@
 - Se implementó un backend de proveedores con FastAPI, TinyDB y seeder idempotente.
 - Se añadió interfaz de proveedores en backoffice y navegación desde la web.
 - Se creó la estructura solicitada en monorepo: services/api y uis/application/app/suppliers.
+- Se implementó AUTH-01 en services/api: módulos users/profiles en TinyDB, login JWT, dependencia get_current_user y protección de rutas sensibles.
