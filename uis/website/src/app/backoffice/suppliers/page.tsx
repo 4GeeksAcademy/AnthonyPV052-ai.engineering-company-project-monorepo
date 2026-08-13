@@ -1,17 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-
-function resolveApiBase(): string {
-  if (process.env.NEXT_PUBLIC_SUPPLIERS_API_URL) {
-    return process.env.NEXT_PUBLIC_SUPPLIERS_API_URL.replace(/\/suppliers\/?$/, "");
-  }
-
-  // Use Next.js rewrite proxy to avoid cross-origin tunnel/CORS issues in Codespaces.
-  return "/api";
-}
-
-const API_BASE = resolveApiBase();
+import { authenticatedApiFetch } from "@/lib/auth";
 
 const VALID_CATEGORIES = [
   "carne",
@@ -63,34 +53,6 @@ const EMPTY_FORM: SupplierCreateForm = {
   notes: "",
 };
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-    });
-  } catch {
-    throw new Error(`No se pudo conectar con la API (${API_BASE}). Verifica que esté levantada y permitida por CORS.`);
-  }
-
-  if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
-    try {
-      const payload = (await response.json()) as { detail?: string; error?: string };
-      detail = payload.detail ?? payload.error ?? detail;
-    } catch {
-      // Ignore JSON parsing failures on error.
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
-
 function StatusBadge({ status }: { status: SupplierStatus }) {
   return (
     <span
@@ -128,7 +90,7 @@ export default function SuppliersDirectoryPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<Supplier[]>(filteredPath);
+      const data = await authenticatedApiFetch<Supplier[]>(filteredPath);
       setSuppliers(data);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Error al cargar proveedores.");
@@ -144,7 +106,7 @@ export default function SuppliersDirectoryPage() {
 
     async function fetchOnFilterChange() {
       try {
-        const data = await apiFetch<Supplier[]>(filteredPath);
+        const data = await authenticatedApiFetch<Supplier[]>(filteredPath);
         if (!cancelled) {
           setSuppliers(data);
           setError(null);
@@ -180,7 +142,7 @@ export default function SuppliersDirectoryPage() {
         notes: form.notes.trim() || null,
       };
 
-      await apiFetch<Supplier>("/supplier", {
+      await authenticatedApiFetch<Supplier>("/supplier", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -204,7 +166,7 @@ export default function SuppliersDirectoryPage() {
     setMessage(null);
 
     try {
-      await apiFetch<Supplier>(`/suppliers/${supplier.id}/rate`, {
+      await authenticatedApiFetch<Supplier>(`/suppliers/${supplier.id}/rate`, {
         method: "PATCH",
         body: JSON.stringify({ rate_per_unit: Number(draftValue) }),
       });
@@ -221,7 +183,7 @@ export default function SuppliersDirectoryPage() {
     setError(null);
     setMessage(null);
     try {
-      await apiFetch<Supplier>(`/suppliers/${supplier.id}/status`, {
+      await authenticatedApiFetch<Supplier>(`/suppliers/${supplier.id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status: nextStatus }),
       });
