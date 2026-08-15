@@ -10,6 +10,11 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [message] = useState<string | null>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("reset") === "success"
+      ? "Contraseña restablecida. Ya puedes iniciar sesión."
+      : null,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -61,12 +66,14 @@ export default function LoginPage() {
             </label>
 
             {error && <p role="alert" className="rounded-xl border border-rose-400/40 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{error}</p>}
+            {message && <p role="status" className="rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">{message}</p>}
 
             <button type="submit" disabled={isSubmitting} className="w-full rounded-xl bg-orange-400 px-4 py-3 font-bold text-slate-950 transition hover:bg-orange-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-300 disabled:cursor-not-allowed disabled:opacity-60">
               {isSubmitting ? "Accediendo…" : "Entrar al backoffice"}
             </button>
           </form>
 
+          <p className="mt-4 text-right text-sm"><Link href="/forgot-password" className="font-semibold text-orange-300 underline underline-offset-4 hover:text-orange-200">¿Olvidaste tu contraseña?</Link></p>
           <p className="mt-6 text-sm text-slate-300">¿Aún no tienes cuenta? <Link href="/auth/register" className="font-semibold text-orange-300 underline underline-offset-4 hover:text-orange-200">Crear una cuenta</Link></p>
         </div>
       </section>

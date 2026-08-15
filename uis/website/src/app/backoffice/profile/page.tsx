@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   ApiError,
   getCurrentUser,
@@ -124,6 +125,9 @@ export default function ProfilePage() {
             <button type="submit" disabled={saving} className="rounded-xl bg-orange-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-orange-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-300 disabled:cursor-not-allowed disabled:opacity-60">
               {saving ? "Guardando…" : "Guardar cambios"}
             </button>
+            <Link href="/account/change-password" className="ml-4 text-sm font-semibold text-orange-300 underline underline-offset-4 hover:text-orange-200">
+              Cambiar contraseña
+            </Link>
           </form>
         )}
       </section>
