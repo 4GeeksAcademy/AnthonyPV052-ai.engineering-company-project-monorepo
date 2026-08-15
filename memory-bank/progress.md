@@ -15,3 +15,4 @@
 - Se corrigió la resolución de `src/data/sample` para que el build de Next.js use el módulo TypeScript `sample.ts`.
 - Se integró AUTH-01 en website: login, registro, almacenamiento local de JWT, guard cliente y Bearer en el directorio de proveedores.
 - Se añadió el perfil de usuario en el backoffice, con edición de datos opcionales, acceso de perfil, aviso de campos pendientes y navegación a inicio.
+- Se incorporó recuperación y cambio de contraseña: tokens de un solo uso, envío por Resend y vistas públicas/protegidas en website.
