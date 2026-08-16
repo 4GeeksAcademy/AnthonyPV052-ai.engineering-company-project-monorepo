@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        // El gestor ya incluye el prefijo /api en FastAPI. Esta regla debe ir
+        // antes de la regla genérica, que se mantiene para los endpoints legados.
+        source: "/api/incidents/:path*",
+        destination: "http://127.0.0.1:8020/api/incidents/:path*",
+      },
+      {
         source: "/api/:path*",
         destination: "http://127.0.0.1:8020/:path*",
       },
