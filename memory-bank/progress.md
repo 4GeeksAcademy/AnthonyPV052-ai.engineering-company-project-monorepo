@@ -16,3 +16,6 @@
 - Se integró AUTH-01 en website: login, registro, almacenamiento local de JWT, guard cliente y Bearer en el directorio de proveedores.
 - Se añadió el perfil de usuario en el backoffice, con edición de datos opcionales, acceso de perfil, aviso de campos pendientes y navegación a inicio.
 - Se incorporó recuperación y cambio de contraseña: tokens de un solo uso, envío por Resend y vistas públicas/protegidas en website.
+- Se implementó el gestor centralizado de incidencias en services/api: CRUD de lectura/creación, filtros, resumen agregado, transiciones de estado y manejo uniforme de errores.
+- Se añadió el gestor de incidencias al backoffice: registro con validación y feedback, listado filtrable con actualización de estado y panel de resumen resiliente.
+- Se conectó el seeder del histórico `incidents-brasaland.csv` al almacenamiento TinyDB del API y al comando estándar de seed.

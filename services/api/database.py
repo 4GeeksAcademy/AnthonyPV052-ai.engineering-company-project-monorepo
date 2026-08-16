@@ -10,6 +10,7 @@ SUPPLIERS_DB_FILE = DATA_DIR / "suppliers.json"
 USERS_DB_FILE = DATA_DIR / "users.json"
 PROFILES_DB_FILE = DATA_DIR / "profiles.json"
 PASSWORD_RESET_TOKENS_DB_FILE = DATA_DIR / "password_reset_tokens.json"
+INCIDENTS_DB_FILE = DATA_DIR / "incidents.json"
 
 
 def _open_db(file_path: Path) -> TinyDB:
@@ -31,3 +32,7 @@ def get_profiles_db() -> TinyDB:
 
 def get_password_reset_tokens_db() -> TinyDB:
     return _open_db(PASSWORD_RESET_TOKENS_DB_FILE)
+
+
+def get_incidents_db() -> TinyDB:
+    return _open_db(INCIDENTS_DB_FILE)

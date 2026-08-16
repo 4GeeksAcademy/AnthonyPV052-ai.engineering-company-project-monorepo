@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from models import SupplierStored
 from database import get_db
+from pathlib import Path
+import sys
 
 SUPPLIERS_SEED = [
     {
@@ -171,6 +173,14 @@ def main() -> None:
         inserted += 1
 
     print(f"Seeder completado. Insertados: {inserted}. Omitidos por duplicado: {skipped}.")
+
+    root = Path(__file__).resolve().parents[2]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts.seed_incidents import print_report, seed_incidents
+
+    incident_result = seed_incidents()
+    print_report(*incident_result)
 
 
 if __name__ == "__main__":

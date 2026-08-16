@@ -1,6 +1,7 @@
 # Services API
 
-Estructura backend solicitada para directorio de proveedores.
+Backend FastAPI para el directorio de proveedores, autenticación y gestor
+centralizado de incidencias.
 
 ## Variables de entorno
 
@@ -21,6 +22,10 @@ cd services/api
 ~/.local/bin/uv run seed
 ~/.local/bin/uv run uvicorn main:app --reload --port 8020
 ```
+
+El comando `seed` carga tanto los proveedores de ejemplo como el histórico de
+`incidents-brasaland.csv` en `data/incidents.json`; puede ejecutarse varias veces
+sin duplicar incidencias.
 
 ## Endpoints
 
@@ -62,3 +67,17 @@ cd services/api
 - `PATCH /suppliers/{id}/status`
 - `DELETE /suppliers`
 - `DELETE /suppliers/{id}`
+
+### Incidents
+
+Estos endpoints son públicos mientras no se defina un requisito de autorización
+para la operación de incidencias.
+
+- `POST /api/incidents`
+- `GET /api/incidents?status=&origin=&branch=&category=`
+- `GET /api/incidents/{id}`
+- `PATCH /api/incidents/{id}/status`
+- `GET /api/incidents/summary`
+
+Las transiciones de estado permitidas son `open → in_progress|discarded` e
+`in_progress → resolved|discarded`; `resolved` y `discarded` son finales.
