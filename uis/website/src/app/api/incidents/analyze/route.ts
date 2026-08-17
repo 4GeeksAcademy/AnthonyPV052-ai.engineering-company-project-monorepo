@@ -66,10 +66,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `Error inesperado al analizar incidencias: ${error.message}`
-            : "Error inesperado al analizar incidencias.",
+        error: "Se ha producido un error inesperado al analizar el fichero CSV.",
       },
       { status: 500 },
     );
