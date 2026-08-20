@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from tinydb import Query as TinyQuery
 
-from database import get_db
+from database import get_tinydb_db as get_db
 from models import (
     CountryEnum,
     SupplierCreate,
