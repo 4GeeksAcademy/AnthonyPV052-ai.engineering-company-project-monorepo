@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from models import SupplierStored
-from database import get_db
+from database import get_tinydb_db as get_db
 from pathlib import Path
 import sys
 
@@ -181,6 +181,12 @@ def main() -> None:
 
     incident_result = seed_incidents()
     print_report(*incident_result)
+
+    # Seed de inventario en Supabase
+    from seed_inventory import print_report as inv_report, seed_inventory
+
+    inv_result = seed_inventory()
+    inv_report(*inv_result)
 
 
 if __name__ == "__main__":
