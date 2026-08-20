@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from database import init_db
 from routes.auth import router as auth_router
 from routes.incidents import router as incidents_router
+from routes.inventory import router as inventory_router
 from routes.profiles import router as profiles_router
 from routes.suppliers import router as suppliers_router
 from routes.users import router as users_router
 
-app = FastAPI(title="Brasaland Supplier Directory API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Inicializa el esquema de base de datos SQLModel al arrancar la aplicación."""
+    init_db()  # Crea las tablas Ingredient, IngredientEntry, IngredientExit en Supabase
+    yield
+
+
+app = FastAPI(title="Brasaland Supplier Directory API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +44,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(profiles_router)
 app.include_router(incidents_router)
+app.include_router(inventory_router)
 
 
 @app.exception_handler(RequestValidationError)
