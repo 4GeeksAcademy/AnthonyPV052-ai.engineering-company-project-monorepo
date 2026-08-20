@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from tinydb import Query
 
 from auth_models import ProfileStored, ProfileUpdate, UserRoleEnum, UserStored, UserUpdate
-from database import get_profiles_db, get_users_db
+from database import get_password_reset_tokens_db, get_profiles_db, get_users_db
 
 
 def _to_dict(document: dict | None) -> dict | None:
@@ -129,3 +131,29 @@ def update_profile_by_user_id(user_id: str, payload: ProfileUpdate) -> dict:
         profiles_db.update(updates, query.user_id == user_id)
 
     return _to_dict(profiles_db.get(query.user_id == user_id)) or dict(existing)
+
+
+def create_password_reset_token_record(*, token_id: str, user_id: str, expires_at: datetime) -> None:
+    tokens_db = get_password_reset_tokens_db()
+    tokens_db.insert(
+        {
+            "token_id": token_id,
+            "user_id": user_id,
+            "expires_at": expires_at.isoformat(),
+            "used_at": None,
+        }
+    )
+
+
+def consume_password_reset_token(*, token_id: str, user_id: str) -> bool:
+    tokens_db = get_password_reset_tokens_db()
+    query = Query()
+    record = tokens_db.get((query.token_id == token_id) & (query.user_id == user_id))
+    if record is None or record.get("used_at") is not None:
+        return False
+
+    tokens_db.update(
+        {"used_at": datetime.now(timezone.utc).isoformat()},
+        (query.token_id == token_id) & (query.user_id == user_id),
+    )
+    return True

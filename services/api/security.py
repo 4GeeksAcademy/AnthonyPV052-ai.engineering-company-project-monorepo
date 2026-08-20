@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -54,6 +55,17 @@ def get_access_token_expire_minutes() -> int:
     return value
 
 
+def get_password_reset_token_expire_minutes() -> int:
+    raw_value = os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "15")
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES must be a valid integer") from exc
+    if value <= 0:
+        raise RuntimeError("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES must be greater than 0")
+    return value
+
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -71,6 +83,30 @@ def create_access_token(*, user_id: str, expires_delta: timedelta | None = None)
         "exp": int(expire.timestamp()),
     }
     return jwt.encode(payload, get_secret_key(), algorithm=ALGORITHM)
+
+
+def create_password_reset_token(*, user_id: str) -> tuple[str, str, datetime]:
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=get_password_reset_token_expire_minutes())
+    token_id = str(uuid4())
+    token = jwt.encode(
+        {"sub": user_id, "jti": token_id, "purpose": "password_reset", "exp": int(expires_at.timestamp())},
+        get_secret_key(),
+        algorithm=ALGORITHM,
+    )
+    return token, token_id, expires_at
+
+
+def validate_password_reset_token(token: str) -> tuple[str, str]:
+    try:
+        payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
+    except JWTError as exc:
+        raise ValueError("Invalid or expired password reset token") from exc
+
+    user_id = payload.get("sub")
+    token_id = payload.get("jti")
+    if payload.get("purpose") != "password_reset" or not user_id or not token_id:
+        raise ValueError("Invalid or expired password reset token")
+    return user_id, token_id
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:

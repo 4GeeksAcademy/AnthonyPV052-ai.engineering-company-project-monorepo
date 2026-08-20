@@ -74,7 +74,7 @@ export default function Navbar({ mode = "home" }: NavbarProps) {
                   href="/backoffice/incidents"
                   className="block rounded-lg px-3 py-2 transition hover:bg-white/10"
                 >
-                  Incidencias
+                  Gestor de incidencias
                 </Link>
               </li>
               <li>
@@ -116,7 +116,7 @@ export default function Navbar({ mode = "home" }: NavbarProps) {
             href="/backoffice/incidents"
             className="rounded-full border border-white/25 px-5 py-2.5 font-semibold text-white transition hover:bg-white/10"
           >
-            Incidencias
+            Gestor de incidencias
           </Link>
           <Link
             href="/backoffice/suppliers"

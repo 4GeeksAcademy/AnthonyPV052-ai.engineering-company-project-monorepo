@@ -1,3 +1,4 @@
+
 export interface MenuItem {
   id: string; // ID del ítem (ej: "ITEM-PICANHA-250")
   name: string; // Nombre del ítem (ej: "Picanha 250g")
@@ -72,4 +73,43 @@ export interface CountryMetrics {
   totalRevenue: Price;
   averageRevenuePerLocation: Price;
   totalSales: number;
+}
+
+export type category =
+  | "equipment_failure"
+  | "supply_issue"
+  | "customer_complaint"
+  | "staff_issue"
+  | "facility_issue"
+  | "pos_system"
+  | "delivery_issue"
+  | "other";
+export type branch = "central" 
+| "medellin_centro" 
+| "medellin_laureles" 
+| "medellin_envigado" 
+| "medellin_bello" 
+| "medellin_itagui" 
+| "bogota_chapinero" 
+| "bogota_usaquen" 
+| "cali_granada" 
+| "barranquilla_norte" 
+| "miami_doral" 
+| "miami_hialeah" 
+| "miami_kendall" 
+| "orlando_international" 
+| "fort_lauderdale";
+export type status = "open" | "in_progress" | "discarded" | "resolved";
+export type origin = "internal" | "branch" | "customer";
+// Modelo Incident. Campos: id, title, description, category, status, origin, branch, created_at, updated_at.
+export interface Incident {
+  id: string;
+  title: string;
+  description: string;
+  category: category;
+  status: status;
+  origin: origin;
+  branch: branch;
+  created_at: Date;
+  updated_at: Date;
 }

@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Self
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from sqlmodel import Field as SQLModelField, SQLModel
 
 VALID_CATEGORIES = [
     "carne",
@@ -90,3 +91,55 @@ class SupplierStored(SupplierCreate):
 class SupplierResponse(SupplierCreate):
     id: int
     updated_at: datetime
+
+
+# ============================================================================
+# Modelos SQLModel (tablas en Supabase / PostgreSQL)
+# ============================================================================
+
+
+class Ingredient(SQLModel, table=True):
+    """Ingrediente / producto del inventario."""
+
+    __tablename__ = "ingredient"
+
+    id: int | None = SQLModelField(default=None, primary_key=True)
+    name: str = SQLModelField(nullable=False)
+    sku: str = SQLModelField(nullable=False, unique=True, index=True)
+    unit: str = SQLModelField(nullable=False)
+    category: str = SQLModelField(nullable=False)
+    country: str = SQLModelField(nullable=False)
+
+
+class IngredientEntry(SQLModel, table=True):
+    """Entrega de ingredientes recibida de un proveedor."""
+
+    __tablename__ = "ingrediententry"
+
+    id: int | None = SQLModelField(default=None, primary_key=True)
+    ingredient_id: int = SQLModelField(foreign_key="ingredient.id", nullable=False)
+    quantity: float = SQLModelField(nullable=False)
+    supplier_name: str = SQLModelField(nullable=False)
+    location_id: int = SQLModelField(nullable=False)
+    created_at: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    # user_uuid referencia al usuario en TinyDB (sin FK ni tabla de usuarios en SQL)
+    user_uuid: str = SQLModelField(nullable=False)
+
+
+class IngredientExit(SQLModel, table=True):
+    """Registro de consumo o merma de ingredientes."""
+
+    __tablename__ = "ingredientexit"
+
+    id: int | None = SQLModelField(default=None, primary_key=True)
+    ingredient_id: int = SQLModelField(foreign_key="ingredient.id", nullable=False)
+    quantity: float = SQLModelField(nullable=False)
+    reason: str = SQLModelField(nullable=False)
+    location_id: int = SQLModelField(nullable=False)
+    created_at: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    # user_uuid referencia al usuario en TinyDB (sin FK ni tabla de usuarios en SQL)
+    user_uuid: str = SQLModelField(nullable=False)

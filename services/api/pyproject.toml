@@ -11,10 +11,13 @@ dependencies = [
   "python-jose[cryptography]>=3.5.0",
   "passlib[bcrypt]>=1.7.4",
   "bcrypt==4.0.1",
+  "sqlmodel>=0.0.39",
+  "psycopg2-binary>=2.9.12",
 ]
 
 [project.scripts]
 seed = "seed:main"
+seed-inventory = "seed_inventory:main"
 
 [build-system]
 requires = ["hatchling>=1.25.0"]
@@ -31,6 +34,7 @@ include = [
   "models.py",
   "database.py",
   "security.py",
+  "email_service.py",
   "auth_models.py",
   "users_service.py",
   "routes/*.py",
