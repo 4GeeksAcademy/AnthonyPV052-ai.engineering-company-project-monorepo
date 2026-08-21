@@ -1,6 +1,6 @@
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /app/website
 
 # Copy package files first (for Docker layer caching)
 COPY website/package.json website/package-lock.json ./
@@ -11,10 +11,9 @@ RUN npm ci
 # Copy the rest of the application code
 COPY website/ ./
 
-# Build the Next.js application
-RUN npm run build
 
 # Copy the startup script
+WORKDIR /app
 COPY start.sh .
 RUN chmod +x start.sh
 
