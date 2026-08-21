@@ -1,0 +1,41 @@
+services:
+  backend:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+    container_name: brasaland-backend
+    volumes:
+      - ./services/api:/app
+      - /app/.venv
+    ports:
+      - "8020:8020"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - APP_BASE_URL=http://frontend:3000
+    networks:
+      - brasaland-net
+    command: ["uv", "run", "uvicorn", "main:app", "--reload", "--port", "8020", "--host", "0.0.0.0"]
+
+  frontend:
+    build:
+      context: ./uis
+      dockerfile: Dockerfile
+    container_name: brasaland-frontend
+    volumes:
+      - ./uis/website:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - backend
+    networks:
+      - brasaland-net
+    command: ["npx", "next", "dev", "-p", "3000"]
+
+networks:
+  brasaland-net:
+    name: brasaland-net
+    driver: bridge
