@@ -88,6 +88,22 @@ class SupplierStored(SupplierCreate):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class SupplierListItem(BaseModel):
+    """Versión ligera para listados de proveedores.
+
+    Omite campos internos o pesados (contact_email, notes, updated_at)
+    que no son necesarios en una vista de lista.
+    """
+
+    id: int
+    name: str
+    country: CountryEnum
+    categories: list[str]
+    rate_per_unit: float
+    currency: CurrencyEnum
+    status: SupplierStatusEnum
+
+
 class SupplierResponse(SupplierCreate):
     id: int
     updated_at: datetime

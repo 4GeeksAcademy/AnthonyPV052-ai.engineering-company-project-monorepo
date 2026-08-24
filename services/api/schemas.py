@@ -5,6 +5,17 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 # ============================================================================
+# Schema genérico de mensaje
+# ============================================================================
+
+
+class MessageResponse(BaseModel):
+    """Respuesta genérica para endpoints que solo devuelven un mensaje."""
+
+    message: str
+
+
+# ============================================================================
 # Schemas de Ingredient
 # ============================================================================
 

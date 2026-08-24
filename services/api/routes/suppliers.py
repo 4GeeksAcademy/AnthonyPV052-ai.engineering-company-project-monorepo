@@ -9,11 +9,13 @@ from database import get_tinydb_db as get_db
 from models import (
     CountryEnum,
     SupplierCreate,
+    SupplierListItem,
     SupplierRatePatch,
     SupplierResponse,
     SupplierStatusPatch,
     SupplierStored,
 )
+from schemas import MessageResponse
 from security import get_current_user
 
 router = APIRouter(tags=["suppliers"], dependencies=[Depends(get_current_user)])
@@ -32,22 +34,22 @@ def create_supplier(payload: SupplierCreate) -> SupplierResponse:
     return _to_response(doc_id, dict(created))
 
 
-@router.get("/suppliers", response_model=list[SupplierResponse])
+@router.get("/suppliers", response_model=list[SupplierListItem])
 def list_suppliers(
     country: CountryEnum | None = Query(default=None),
     category: str | None = Query(default=None),
-) -> list[SupplierResponse]:
+) -> list[SupplierListItem]:
     db = get_db()
     docs = db.all()
 
-    result: list[SupplierResponse] = []
+    result: list[SupplierListItem] = []
     for doc in docs:
         data = dict(doc)
         if country and data.get("country") != country.value:
             continue
         if category and category not in data.get("categories", []):
             continue
-        result.append(_to_response(doc.doc_id, data))
+        result.append(SupplierListItem(id=doc.doc_id, **data))
 
     return result
 
@@ -93,8 +95,8 @@ def patch_supplier_status(supplier_id: int, payload: SupplierStatusPatch) -> Sup
     return _to_response(supplier_id, dict(updated))
 
 
-@router.delete("/suppliers")
-def delete_by_query(name: str) -> dict[str, str]:
+@router.delete("/suppliers", response_model=MessageResponse)
+def delete_by_query(name: str) -> MessageResponse:
     """Internal helper endpoint not exposed in docs by default usage.
 
     Kept to support occasional cleanup in demos when needed.
@@ -104,15 +106,15 @@ def delete_by_query(name: str) -> dict[str, str]:
     if not db.contains(q.name == name):
         raise HTTPException(status_code=404, detail="Supplier not found")
     db.remove(q.name == name)
-    return {"message": "Supplier deleted"}
+    return MessageResponse(message="Supplier deleted")
 
 
-@router.delete("/suppliers/{supplier_id}")
-def delete_supplier(supplier_id: int) -> dict[str, str]:
+@router.delete("/suppliers/{supplier_id}", response_model=MessageResponse)
+def delete_supplier(supplier_id: int) -> MessageResponse:
     db = get_db()
     doc = db.get(doc_id=supplier_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Supplier not found")
 
     db.remove(doc_ids=[supplier_id])
-    return {"message": "Supplier deleted"}
+    return MessageResponse(message="Supplier deleted")
