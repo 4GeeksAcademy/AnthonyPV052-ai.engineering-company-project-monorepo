@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from auth_models import ProfilePublic, UserCreate, UserPublic, UserRoleEnum, UserUpdate
+from auth_models import ProfilePublic, UserCreate, UserPublic, UserRegistrationResponse, UserRoleEnum, UserUpdate
+from schemas import MessageResponse
 from security import get_current_user, hash_password
 from users_service import (
     create_user,
@@ -35,8 +36,8 @@ def _ensure_same_user_or_admin(current_user: dict, target_user_id: str) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-def register_user(payload: UserCreate) -> dict:
+@router.post("", response_model=UserRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_user(payload: UserCreate) -> UserRegistrationResponse:
     existing = get_user_by_email(payload.email)
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -49,10 +50,10 @@ def register_user(payload: UserCreate) -> dict:
         profile_phone=payload.phone,
         profile_address=payload.address,
     )
-    return {
-        "user": _to_user_public(user),
-        "profile": ProfilePublic(**profile),
-    }
+    return UserRegistrationResponse(
+        user=_to_user_public(user),
+        profile=ProfilePublic(**profile),
+    )
 
 
 @router.get("", response_model=list[UserPublic])
@@ -98,13 +99,13 @@ def put_user(user_id: str, payload: UserUpdate, current_user: dict = Depends(get
     return _to_user_public(updated)
 
 
-@router.delete("/{user_id}")
-def remove_user(user_id: str, current_user: dict = Depends(get_current_user)) -> dict[str, str]:
+@router.delete("/{user_id}", response_model=MessageResponse)
+def remove_user(user_id: str, current_user: dict = Depends(get_current_user)) -> MessageResponse:
     _ensure_same_user_or_admin(current_user, user_id)
     deleted = delete_user(user_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return {"message": "User deleted"}
+    return MessageResponse(message="User deleted")
 
 
 @router.get("/{user_id}/profile", response_model=ProfilePublic)

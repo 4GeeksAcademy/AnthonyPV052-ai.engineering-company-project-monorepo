@@ -13,10 +13,11 @@ from auth_models import (
     ProfilePublic,
     ResetPasswordRequest,
     TokenResponse,
-    UserUpdate,
     UserRoleEnum,
+    UserUpdate,
 )
 from email_service import send_password_reset_email
+from schemas import MessageResponse
 from security import (
     create_access_token,
     create_password_reset_token,
@@ -55,8 +56,8 @@ def login(payload: LoginRequest) -> TokenResponse:
     )
 
 
-@router.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest) -> dict[str, str]:
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(payload: ForgotPasswordRequest) -> MessageResponse:
     """Return the same response whether or not the email belongs to an account."""
     user = get_user_by_email(payload.email.strip())
     if user is not None:
@@ -68,11 +69,11 @@ def forgot_password(payload: ForgotPasswordRequest) -> dict[str, str]:
             # Do not disclose delivery or account information to the requester.
             logger.exception("Password-reset email delivery failed")
 
-    return {"message": "If that address is registered, you will receive a reset link shortly."}
+    return MessageResponse(message="If that address is registered, you will receive a reset link shortly.")
 
 
-@router.post("/reset-password")
-def reset_password(payload: ResetPasswordRequest) -> dict[str, str]:
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(payload: ResetPasswordRequest) -> MessageResponse:
     try:
         user_id, token_id = validate_password_reset_token(payload.token)
     except ValueError as exc:
@@ -84,16 +85,16 @@ def reset_password(payload: ResetPasswordRequest) -> dict[str, str]:
     updated_user = update_user(user_id, UserUpdate(), hashed_password=hash_password(payload.new_password))
     if updated_user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid, expired, or used reset token")
-    return {"message": "Password reset successfully"}
+    return MessageResponse(message="Password reset successfully")
 
 
-@router.post("/change-password")
-def change_password(payload: ChangePasswordRequest, current_user: dict = Depends(get_current_user)) -> dict[str, str]:
+@router.post("/change-password", response_model=MessageResponse)
+def change_password(payload: ChangePasswordRequest, current_user: dict = Depends(get_current_user)) -> MessageResponse:
     if not verify_password(payload.current_password, current_user["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
 
     update_user(current_user["id"], UserUpdate(), hashed_password=hash_password(payload.new_password))
-    return {"message": "Password changed successfully"}
+    return MessageResponse(message="Password changed successfully")
 
 
 @router.get("/me", response_model=AuthMeResponse)

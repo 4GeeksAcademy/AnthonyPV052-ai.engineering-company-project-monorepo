@@ -97,3 +97,10 @@ class AuthMeResponse(BaseModel):
     email: EmailStr
     role: UserRoleEnum
     profile: ProfilePublic | None = None
+
+
+class UserRegistrationResponse(BaseModel):
+    """Respuesta tipada para POST /users (registro)."""
+
+    user: UserPublic
+    profile: ProfilePublic

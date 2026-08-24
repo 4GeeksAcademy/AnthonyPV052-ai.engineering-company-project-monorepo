@@ -16,6 +16,7 @@ from incident_models import (
     IncidentStatus,
     IncidentStatusUpdate,
     IncidentStored,
+    IncidentSummaryResponse,
 )
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
@@ -46,20 +47,20 @@ def create_incident(payload: IncidentCreate) -> IncidentResponse:
     return IncidentResponse(**stored.model_dump())
 
 
-@router.get("/summary")
-def get_incidents_summary() -> dict[str, dict[str, int]]:
+@router.get("/summary", response_model=IncidentSummaryResponse)
+def get_incidents_summary() -> IncidentSummaryResponse:
     documents = [dict(document) for document in get_incidents_db().all()]
 
     def totals(values: list[str], field: str) -> dict[str, int]:
         counter = Counter(document.get(field) for document in documents)
         return {value: counter.get(value, 0) for value in values}
 
-    return {
-        "by_status": totals([item.value for item in IncidentStatus], "status"),
-        "by_category": totals([item.value for item in IncidentCategory], "category"),
-        "by_origin": totals([item.value for item in IncidentOrigin], "origin"),
-        "by_branch": totals([item.value for item in IncidentBranch], "branch"),
-    }
+    return IncidentSummaryResponse(
+        by_status=totals([item.value for item in IncidentStatus], "status"),
+        by_category=totals([item.value for item in IncidentCategory], "category"),
+        by_origin=totals([item.value for item in IncidentOrigin], "origin"),
+        by_branch=totals([item.value for item in IncidentBranch], "branch"),
+    )
 
 
 @router.get("", response_model=list[IncidentResponse])

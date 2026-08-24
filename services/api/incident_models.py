@@ -78,3 +78,12 @@ class IncidentResponse(IncidentStored):
 
 class IncidentStatusUpdate(BaseModel):
     status: IncidentStatus
+
+
+class IncidentSummaryResponse(BaseModel):
+    """Respuesta tipada para GET /api/incidents/summary."""
+
+    by_status: dict[str, int]
+    by_category: dict[str, int]
+    by_origin: dict[str, int]
+    by_branch: dict[str, int]
