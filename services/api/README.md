@@ -14,13 +14,30 @@ Crear archivo `.env` dentro de `services/api` usando `.env.example`:
 - `RESEND_FROM_EMAIL`: remitente con dominio verificado en Resend.
 - `APP_BASE_URL`: URL pública de website para construir el enlace de restablecimiento.
 
-## Ejecutar
+## Ejecutar con Docker
+
+```bash
+# Desde la raíz del monorepo
+docker compose up --build backend
+```
+
+La API quedará accesible en `http://localhost:8020`.
+
+## Ejecutar sin Docker
+
+Asegúrate de tener Python >= 3.11 y `uv` instalado:
+
+```bash
+pip install uv
+```
+
+Luego:
 
 ```bash
 cd services/api
-~/.local/bin/uv sync
-~/.local/bin/uv run seed
-~/.local/bin/uv run uvicorn main:app --reload --port 8020
+uv sync
+uv run seed
+uv run uvicorn main:app --reload --port 8020
 ```
 
 El comando `seed` carga tanto los proveedores de ejemplo como el histórico de

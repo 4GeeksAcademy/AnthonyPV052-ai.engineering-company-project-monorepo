@@ -71,47 +71,57 @@ def seed_inventory() -> tuple[int, int, int]:
 
         session.commit()
 
-        # ---- Entries ----
-        sku_to_id = _get_sku_to_id(session)
+        # ---- Entries / Exits (solo si el seed del sistema no se ha aplicado aún) ----
+        # Marcamos las filas con user_uuid = "seed-system". Si ya existe al
+        # menos una entrada con ese marcador, saltamos todas las entradas y
+        # salidas del seed para evitar duplicados en ejecuciones sucesivas.
+        existing_seed_entries = session.exec(
+            select(IngredientEntry).where(IngredientEntry.user_uuid == "seed-system").limit(1)
+        ).first()
 
-        for data in ENTRIES_SEED:
-            ingredient_id = sku_to_id.get(data["sku"])
-            if ingredient_id is None:
-                print(f"  [WARN] SKU '{data['sku']}' no encontrado, saltando entry.")
-                continue
+        if existing_seed_entries is None:
+            sku_to_id = _get_sku_to_id(session)
 
-            entry = IngredientEntry(
-                ingredient_id=ingredient_id,
-                quantity=data["quantity"],
-                supplier_name=data["supplier_name"],
-                location_id=data["location_id"],
-                created_at=datetime.now(timezone.utc),
-                user_uuid=data["user_uuid"],
-            )
-            session.add(entry)
-            entries_count += 1
+            for data in ENTRIES_SEED:
+                ingredient_id = sku_to_id.get(data["sku"])
+                if ingredient_id is None:
+                    print(f"  [WARN] SKU '{data['sku']}' no encontrado, saltando entry.")
+                    continue
 
-        session.commit()
+                entry = IngredientEntry(
+                    ingredient_id=ingredient_id,
+                    quantity=data["quantity"],
+                    supplier_name=data["supplier_name"],
+                    location_id=data["location_id"],
+                    created_at=datetime.now(timezone.utc),
+                    user_uuid=data["user_uuid"],
+                )
+                session.add(entry)
+                entries_count += 1
 
-        # ---- Exits ----
-        for data in EXITS_SEED:
-            ingredient_id = sku_to_id.get(data["sku"])
-            if ingredient_id is None:
-                print(f"  [WARN] SKU '{data['sku']}' no encontrado, saltando exit.")
-                continue
+            session.commit()
 
-            exit_record = IngredientExit(
-                ingredient_id=ingredient_id,
-                quantity=data["quantity"],
-                reason=data["reason"],
-                location_id=data["location_id"],
-                created_at=datetime.now(timezone.utc),
-                user_uuid=data["user_uuid"],
-            )
-            session.add(exit_record)
-            exits_count += 1
+            # ---- Exits ----
+            for data in EXITS_SEED:
+                ingredient_id = sku_to_id.get(data["sku"])
+                if ingredient_id is None:
+                    print(f"  [WARN] SKU '{data['sku']}' no encontrado, saltando exit.")
+                    continue
 
-        session.commit()
+                exit_record = IngredientExit(
+                    ingredient_id=ingredient_id,
+                    quantity=data["quantity"],
+                    reason=data["reason"],
+                    location_id=data["location_id"],
+                    created_at=datetime.now(timezone.utc),
+                    user_uuid=data["user_uuid"],
+                )
+                session.add(exit_record)
+                exits_count += 1
+
+            session.commit()
+        else:
+            print("  [SKIP] Seed entries/exits ya aplicados (user_uuid='seed-system' detectado).")
 
     return ingredients_count, entries_count, exits_count
 

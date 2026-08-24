@@ -89,6 +89,28 @@ export default function BackofficeHomePage() {
         </a>
       </section>
 
+      <section className="rounded-2xl border border-sky-300/30 bg-sky-950/20 p-5">
+        <h2 className="text-xl font-bold text-white">Inventario de productos</h2>
+        <p className="mt-2 max-w-3xl text-sm text-slate-200">
+          Gestiona el inventario de ingredientes y productos: consulta stock, registra entradas de proveedores,
+          salidas por consumo o merma, y revisa el historial completo de órdenes.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <a
+            href="/backoffice/inventory/products"
+            className="inline-flex rounded-full bg-sky-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900 transition hover:bg-sky-200"
+          >
+            Ver productos
+          </a>
+          <a
+            href="/backoffice/inventory/orders"
+            className="inline-flex rounded-full border border-sky-300/60 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-sky-200 transition hover:bg-sky-500/10"
+          >
+            Historial de órdenes
+          </a>
+        </div>
+      </section>
+
       <section id="dashboard" className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4">
