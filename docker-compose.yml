@@ -30,11 +30,12 @@ services:
       - "3000:3000"
     environment:
       - WATCHPACK_POLLING=true
+      - API_UPSTREAM_URL=http://backend:8020
     depends_on:
       - backend
     networks:
       - brasaland-net
-    command: ["npx", "next", "dev", "-p", "3000"]
+    command: ["npx", "next", "dev", "--webpack", "-p", "3000"]
 
 networks:
   brasaland-net:
