@@ -13,6 +13,7 @@ dependencies = [
   "bcrypt==4.0.1",
   "sqlmodel>=0.0.39",
   "psycopg2-binary>=2.9.12",
+  "httpx>=0.27.0",
 ]
 
 [project.scripts]
@@ -38,4 +39,6 @@ include = [
   "auth_models.py",
   "users_service.py",
   "routes/*.py",
+  "telemetry_util.py",
+  "telemetry/*.py",
 ]
