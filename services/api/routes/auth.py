@@ -35,6 +35,8 @@ from users_service import (
     update_user,
 )
 
+from telemetry_util import emit_telemetry_event
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
@@ -43,12 +45,36 @@ logger = logging.getLogger(__name__)
 def login(payload: LoginRequest) -> TokenResponse:
     user = get_user_by_email(payload.email)
     if user is None:
+        emit_telemetry_event(
+            "auth_login_attempted",
+            properties={
+                "success": False,
+                "failure_reason": "invalid_credentials",
+                "ip_country": "",
+            },
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     if not verify_password(payload.password, user["hashed_password"]):
+        emit_telemetry_event(
+            "auth_login_attempted",
+            properties={
+                "success": False,
+                "failure_reason": "invalid_credentials",
+                "ip_country": "",
+            },
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     token = create_access_token(user_id=user["id"])
+    emit_telemetry_event(
+        "auth_login_attempted",
+        user_id=user["id"],
+        properties={
+            "success": True,
+            "ip_country": "",
+        },
+    )
     return TokenResponse(
         access_token=token,
         token_type="bearer",
