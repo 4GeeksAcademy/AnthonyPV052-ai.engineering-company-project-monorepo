@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, login } from "@/lib/auth";
+import { telemetry } from "@/services/telemetry";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,8 +25,26 @@ export default function LoginPage() {
 
     try {
       await login(email.trim(), password);
+      telemetry.track("auth_login_attempted", {
+        success: true,
+        ip_country: "",
+      });
       router.replace("/backoffice");
     } catch (caughtError) {
+      if (caughtError instanceof ApiError && caughtError.status === 401) {
+        telemetry.track("auth_login_attempted", {
+          success: false,
+          failure_reason: "invalid_credentials",
+          ip_country: "",
+        });
+      } else {
+        // Error de red u otro: no enviamos failure_reason porque
+        // el enum del schema solo permite: invalid_credentials, account_locked, inactive_account
+        telemetry.track("auth_login_attempted", {
+          success: false,
+          ip_country: "",
+        });
+      }
       if (caughtError instanceof ApiError && caughtError.status === 401) {
         setError("El email o la contraseña no son correctos.");
       } else {
