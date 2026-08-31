@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from tinydb import Query as TinyQuery
 
+from cache import cached, invalidate_cache
 from database import get_incidents_db
 from incident_models import (
     IncidentBranch,
@@ -44,11 +45,14 @@ def create_incident(payload: IncidentCreate) -> IncidentResponse:
     stored = IncidentStored(**payload.model_dump())
     db = get_incidents_db()
     db.insert(stored.model_dump(mode="json"))
+    # Invalidar caché del summary y del listado porque los datos cambiaron
+    invalidate_cache("/api/incidents")
     return IncidentResponse(**stored.model_dump())
 
 
 @router.get("/summary", response_model=IncidentSummaryResponse)
-def get_incidents_summary() -> IncidentSummaryResponse:
+@cached(ttl_seconds=15.0)  # TTL 15s: los datos cambian con cada creación/transición, pero es aceptable un pequeño desfase en el backoffice
+def get_incidents_summary(request: Request) -> IncidentSummaryResponse:
     documents = [dict(document) for document in get_incidents_db().all()]
 
     def totals(values: list[str], field: str) -> dict[str, int]:
@@ -115,4 +119,6 @@ def update_incident_status(incident_id: str, payload: IncidentStatusUpdate) -> I
     db = get_incidents_db()
     db.update({"status": next_status, "updated_at": updated_at}, query.id == incident_id)
     updated = db.get(query.id == incident_id)
+    # Invalidar caché del summary y del incidente individual
+    invalidate_cache("/api/incidents")
     return _to_response(dict(updated))

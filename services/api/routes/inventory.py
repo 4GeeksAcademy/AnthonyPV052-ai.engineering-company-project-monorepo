@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlmodel import Session, func, select
 
+from cache import cached, invalidate_cache
 from database import get_db
 from models import Ingredient, IngredientEntry, IngredientExit
 from schemas import (
@@ -63,7 +64,9 @@ def _build_ingredient_response(ingredient: Ingredient, db: Session) -> Ingredien
 
 
 @router.get("/products", response_model=list[IngredientResponse])
+@cached(ttl_seconds=30.0)  # TTL 30s: el stock solo cambia con entradas/salidas, no en cada consulta
 def list_products(
+    request: Request,
     country: str | None = Query(default=None, description="Filtrar por país: CO o US"),
     db: Session = Depends(get_db),
 ) -> list[IngredientResponse]:
@@ -90,6 +93,7 @@ def create_product(
     db.add(ingredient)
     db.commit()
     db.refresh(ingredient)
+    invalidate_cache("/inventory/products")
     return _build_ingredient_response(ingredient, db)
 
 
@@ -99,7 +103,9 @@ def create_product(
 
 
 @router.get("/products/{ingredient_id}", response_model=IngredientResponse)
+@cached(ttl_seconds=30.0)  # TTL 30s: mismo criterio que list_products
 def get_product(
+    request: Request,
     ingredient_id: int,
     db: Session = Depends(get_db),
 ) -> IngredientResponse:
@@ -143,6 +149,8 @@ def create_inbound_order(
     db.add(entry)
     db.commit()
     db.refresh(entry)
+    invalidate_cache("/inventory/products")
+    invalidate_cache("/inventory/orders")
 
     return IngredientEntryResponse(
         id=entry.id,  # type: ignore[arg-type]
@@ -205,6 +213,8 @@ def create_outbound_order(
     db.add(exit_record)
     db.commit()
     db.refresh(exit_record)
+    invalidate_cache("/inventory/products")
+    invalidate_cache("/inventory/orders")
 
     return IngredientExitResponse(
         id=exit_record.id,  # type: ignore[arg-type]
@@ -223,7 +233,9 @@ def create_outbound_order(
 
 
 @router.get("/orders", response_model=list[IngredientOrderEntry])
+@cached(ttl_seconds=30.0)  # TTL 30s: las órdenes cambian con entradas/salidas
 def list_orders(
+    request: Request,
     ingredient_id: int | None = Query(default=None, description="Filtrar por ingrediente"),
     db: Session = Depends(get_db),
 ) -> list[IngredientOrderEntry]:
