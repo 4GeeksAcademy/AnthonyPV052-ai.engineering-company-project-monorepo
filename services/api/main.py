@@ -16,6 +16,7 @@ from routes.profiles import router as profiles_router
 from routes.suppliers import router as suppliers_router
 from routes.users import router as users_router
 from telemetry.router import router as telemetry_router
+from telemetry.report import router as report_router
 
 import time
 import logging
@@ -126,6 +127,7 @@ app.include_router(profiles_router)
 app.include_router(incidents_router)
 app.include_router(inventory_router)
 app.include_router(telemetry_router)
+app.include_router(report_router)
 
 
 @app.exception_handler(RequestValidationError)
