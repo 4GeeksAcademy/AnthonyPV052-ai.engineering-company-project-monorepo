@@ -18,6 +18,13 @@ from routes.users import router as users_router
 from telemetry.router import router as telemetry_router
 from telemetry.report import router as report_router
 
+# --- Reporting (pipeline de desempeño de negocio) ---
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "reporting"))
+from router import router as reporting_router  # noqa: E402
+
 import time
 import logging
 from fastapi import Request
@@ -128,6 +135,7 @@ app.include_router(incidents_router)
 app.include_router(inventory_router)
 app.include_router(telemetry_router)
 app.include_router(report_router)
+app.include_router(reporting_router)
 
 
 @app.exception_handler(RequestValidationError)
