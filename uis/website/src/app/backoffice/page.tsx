@@ -87,6 +87,35 @@ export default function BackofficeHomePage() {
         </div>
       </section>
 
+      <section className="rounded-2xl border border-orange-300/30 bg-orange-950/20 p-5">
+        <h2 className="text-xl font-bold text-white">Costo y Merma — Reporte Semanal</h2>
+        <p className="mt-2 max-w-3xl text-sm text-slate-200">
+          KPIs semanales de costo de compra, costo de merma, ratio de merma, frecuencia de quiebre de stock
+          y frecuencia de alertas de precio, calculados por el pipeline de desempeño de negocio desde la
+          tabla reporting.weekly_location_performance.
+        </p>
+        <a
+          href="/backoffice/reporting"
+          className="mt-4 inline-flex rounded-full bg-orange-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900 transition hover:bg-orange-200"
+        >
+          Ver reporte semanal
+        </a>
+      </section>
+
+      <section className="rounded-2xl border border-violet-300/30 bg-violet-950/20 p-5">
+        <h2 className="text-xl font-bold text-white">Telemetría — Radar de ingeniería</h2>
+        <p className="mt-2 max-w-3xl text-sm text-slate-200">
+          Métricas técnicas del sistema: volumen de eventos, distribución de errores de API y tasa de fallo de autenticación.
+          Vista operacional para el equipo de ingeniería.
+        </p>
+        <a
+          href="/backoffice/telemetry"
+          className="mt-4 inline-flex rounded-full bg-violet-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900 transition hover:bg-violet-200"
+        >
+          Ver reporte de telemetría
+        </a>
+      </section>
+
       <DashboardMetrics />
     </div>
   );
