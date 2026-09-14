@@ -452,6 +452,88 @@ def export_snapshot(kpis: pd.DataFrame, week_start: date) -> Path:
     return snapshot_path
 
 
+
+# ========================================================================
+# Subflows (cada uno envuelve una task para permitir composición desde el flow principal)
+# ========================================================================
+
+
+@flow(
+    name="extract_events_subflow",
+    description="Subflow de extracción: lee eventos de telemetry_events para una semana."
+)
+def subflow_extract(engine: Engine, week_start: date) -> pd.DataFrame:
+    """Subflow de extracción.
+
+    Args:
+        engine: Motor SQLAlchemy conectado a Supabase/PostgreSQL.
+        week_start: Lunes de la semana ISO a extraer.
+
+    Returns:
+        DataFrame con eventos crudos de la semana.
+    """
+    return extract_events(engine, week_start)
+
+
+@flow(
+    name="transform_kpis_subflow",
+    description="Subflow de transformación: calcula los 5 KPIs semanales por local."
+)
+def subflow_transform(events: pd.DataFrame, week_start: date) -> pd.DataFrame:
+    """Subflow de transformación.
+
+    Args:
+        events: DataFrame con eventos crudos de la semana.
+        week_start: Lunes de la semana ISO procesada.
+
+    Returns:
+        DataFrame con una fila por location_id y los 5 KPIs calculados.
+    """
+    return transform_kpis(events, week_start)
+
+
+@flow(
+    name="load_kpis_subflow",
+    description="Subflow de carga: upsert en reporting.weekly_location_performance + snapshot."
+)
+def subflow_load(engine: Engine, kpis: pd.DataFrame, week_start: date) -> dict[str, Any]:
+    """Subflow de carga.
+
+    Ejecuta el upsert y el snapshot de validación. El snapshot es no crítico:
+    si falla no propaga la excepción al flow principal.
+
+    Args:
+        engine: Motor SQLAlchemy para la base de datos destino.
+        kpis: DataFrame con los KPIs a cargar.
+        week_start: Semana procesada.
+
+    Returns:
+        Dict con ``rows_upserted`` y ``snapshot_path`` (puede ser None).
+    """
+    rows_upserted = load_kpis(engine, kpis, week_start)
+
+    # ── Snapshot (no crítico — return_state=True) ────────────────────
+    snapshot_result = export_snapshot.with_options(  # type: ignore[attr-defined]
+        name="export_snapshot_noncritical"
+    )(kpis, week_start, return_state=True)
+
+    if snapshot_result.is_completed():
+        snapshot_path = snapshot_result.result()
+        logger.info("Snapshot completado: %s", snapshot_path)
+    else:
+        snapshot_path = None
+        logger.warning(
+            "Snapshot falló (tipo=%s): %s — el pipeline continúa normal",
+            snapshot_result.type,
+            snapshot_result.message,
+        )
+
+    return {
+        "rows_upserted": rows_upserted,
+        "snapshot_path": str(snapshot_path) if snapshot_path else None,
+    }
+
+
 # ========================================================================
 # Flow principal
 # ========================================================================
@@ -496,38 +578,21 @@ def run_business_performance_pipeline(week_start: date | None = None) -> dict[st
     _log_pipeline_run(target_engine, week_start, rows_upserted=0, status="running", error_message=None)
 
     try:
-        # ── 1. Extract ────────────────────────────────────────────────
-        events = extract_events(source_engine, week_start)
+        # ── 1. Extract subflow ────────────────────────────────────────
+        events = subflow_extract(source_engine, week_start)
 
-        # ── 2. Transform ──────────────────────────────────────────────
-        kpis = transform_kpis(events, week_start)
+        # ── 2. Transform subflow ─────────────────────────────────────
+        kpis = subflow_transform(events, week_start)
 
-        # ── 3. Load ───────────────────────────────────────────────────
-        rows_upserted = load_kpis(target_engine, kpis, week_start)
-
-        # ── 4. Snapshot (no crítico — return_state=True) ──────────────
-        snapshot_result = export_snapshot.with_options(  # type: ignore[attr-defined]
-            name="export_snapshot_noncritical"
-        )(kpis, week_start, return_state=True)
-
-        # Extraer el resultado del snapshot (puede ser Completed[Path] o Failed[None])
-        if snapshot_result.is_completed():
-            snapshot_path = snapshot_result.result()
-            logger.info("Snapshot completado: %s", snapshot_path)
-        else:
-            snapshot_path = None
-            logger.warning(
-                "Snapshot falló (tipo=%s): %s — el pipeline continúa normal",
-                snapshot_result.type,
-                snapshot_result.message,
-            )
+        # ── 3. Load subflow (incluye load_kpis + snapshot) ───────────
+        load_result = subflow_load(target_engine, kpis, week_start)
 
         result: dict[str, Any] = {
             "status": "completed",
             "week_start": week_start.isoformat(),
             "locations": len(kpis),
-            "rows_upserted": rows_upserted,
-            "snapshot_path": str(snapshot_path) if snapshot_path else None,
+            "rows_upserted": load_result["rows_upserted"],
+            "snapshot_path": load_result["snapshot_path"],
         }
 
     except Exception as exc:
