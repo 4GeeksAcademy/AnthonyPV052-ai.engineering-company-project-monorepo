@@ -19,3 +19,4 @@
 - Se implementó el gestor centralizado de incidencias en services/api: CRUD de lectura/creación, filtros, resumen agregado, transiciones de estado y manejo uniforme de errores.
 - Se añadió el gestor de incidencias al backoffice: registro con validación y feedback, listado filtrable con actualización de estado y panel de resumen resiliente.
 - Se conectó el seeder del histórico `incidents-brasaland.csv` al almacenamiento TinyDB del API y al comando estándar de seed.
+- Se añadió el job nocturno independiente de FastAPI: migración `job_runs`, máquina de estados con lock distribuido, exportación idempotente de telemetría y documentación del cron externo.
