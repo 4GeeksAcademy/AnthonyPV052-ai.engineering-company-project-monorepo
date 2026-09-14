@@ -24,3 +24,33 @@ class TelemetryEvent(BaseModel):
         default_factory=dict,
         description="Propiedades adicionales del evento (contenido variable)",
     )
+
+
+# ========================================================================
+# Modelo SQLModel — tabla telemetry_events en Supabase / PostgreSQL
+# ========================================================================
+
+from sqlalchemy import JSON as SQLJSON  # noqa: E402
+from sqlmodel import Field as SQLModelField, SQLModel  # noqa: E402
+
+
+class TelemetryEventRecord(SQLModel, table=True):
+    """Registro persistente de un evento de telemetría en Supabase.
+
+    Mapea la tabla ``telemetry_events`` existente en Supabase (creada en
+    la Fase 1). Los nombres de columna usan snake_case según la DDL real.
+    """
+
+    __tablename__ = "telemetry_events"
+
+    id: int | None = SQLModelField(default=None, primary_key=True)
+    event_type: str = SQLModelField(nullable=False, index=True)
+    timestamp: datetime = SQLModelField(nullable=False)
+    service: str = SQLModelField(default="", nullable=False)
+    tags: dict = SQLModelField(default={}, sa_type=SQLJSON)
+    received_at: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(),
+        nullable=False,
+    )
+    user_id: str | None = SQLModelField(default=None, index=True)
+    session_id: str | None = SQLModelField(default=None, index=True)
