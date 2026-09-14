@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchProducts, fetchProductById, createOutboundOrder } from "@/lib/inventory";
 import type { IngredientResponse } from "@/lib/inventory";
+import { telemetry } from "@/services/telemetry";
 
 // ============================================================================
 // Mapa de ubicaciones (location_id 1‑14)
@@ -71,6 +72,14 @@ export default function OutboundOrderPage() {
   const [error, setError] = useState<string | null>(null);
   const [quantityFieldError, setQuantityFieldError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Rastrear apertura del formulario de salida
+  useEffect(() => {
+    telemetry.track("inventory_outbound_form_opened", {
+      location_id_preselected: "",
+      product_id_preselected: searchParams.get("productId") ?? "",
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cargar lista de productos al montar y pre‑seleccionar si viene ?productId=
   useEffect(() => {
@@ -201,6 +210,29 @@ export default function OutboundOrderPage() {
           reason: form.reason,
           location_id: locationId,
         });
+        // Rastrear evento de negocio según el motivo
+        const product = products.find((p) => p.id === productId);
+        const eventType = form.reason === "waste" ? "stock_waste_registered" : "outbound_order_created";
+        const wasteReason = form.reason === "waste" ? "kitchen_error" : undefined;
+        telemetry.track(eventType, {
+          location_id: locationId,
+          country: product?.country ?? "",
+          product_id: productId,
+          product_category: product?.category ?? "",
+          quantity,
+          unit: product?.unit ?? "",
+          currency: locationId >= 11 ? "USD" : "COP",
+          ...(wasteReason ? { reason: wasteReason } : {}),
+        });
+        // Si el formulario muestra advertencia de stock pero el usuario envía igualmente
+        if (quantityExceedsStock) {
+          telemetry.track("outbound_stock_warning_triggered", {
+            product_id: productId,
+            requested_quantity: quantity,
+            available_stock: selectedProduct?.current_stock ?? 0,
+            location_id: locationId,
+          });
+        }
         setForm(EMPTY_FORM);
         setSelectedProduct(null);
         setSuccess(

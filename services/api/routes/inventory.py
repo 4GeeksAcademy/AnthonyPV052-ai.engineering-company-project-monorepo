@@ -16,6 +16,7 @@ from schemas import (
     IngredientResponse,
 )
 from security import get_current_user
+from telemetry_util import emit_telemetry_event
 
 router = APIRouter(
     prefix="/inventory",
@@ -152,6 +153,23 @@ def create_inbound_order(
     invalidate_cache("/inventory/products")
     invalidate_cache("/inventory/orders")
 
+    # Emitir telemetría
+    country = ingredient.country
+    emit_telemetry_event(
+        "inbound_order_created",
+        user_id=current_user["id"],
+        properties={
+            "location_id": payload.location_id,
+            "country": country,
+            "product_id": payload.ingredient_id,
+            "product_category": ingredient.category,
+            "quantity": payload.quantity,
+            "unit": ingredient.unit,
+            "currency": "USD" if country == "US" else "COP",
+            "supplier_name": payload.supplier_name,
+        },
+    )
+
     return IngredientEntryResponse(
         id=entry.id,  # type: ignore[arg-type]
         ingredient_id=entry.ingredient_id,
@@ -215,6 +233,46 @@ def create_outbound_order(
     db.refresh(exit_record)
     invalidate_cache("/inventory/products")
     invalidate_cache("/inventory/orders")
+
+    # Emitir telemetría
+    country = ingredient.country
+    event_type = "stock_waste_registered" if payload.reason == "waste" else "outbound_order_created"
+    telemetry_props: dict[str, object] = {
+        "location_id": payload.location_id,
+        "country": country,
+        "product_id": payload.ingredient_id,
+        "product_category": ingredient.category,
+        "quantity": payload.quantity,
+        "unit": ingredient.unit,
+        "currency": "USD" if country == "US" else "COP",
+    }
+    if payload.reason == "waste":
+        telemetry_props["reason"] = "kitchen_error"  # default; backend podría recibir razón real
+
+    emit_telemetry_event(
+        event_type,
+        user_id=current_user["id"],
+        properties=telemetry_props,
+    )
+
+    # Verificar umbral mínimo de stock
+    threshold_min = 10  # umbral por defecto; podría ser configurable por producto
+    new_stock = _compute_current_stock(ingredient_id=payload.ingredient_id, db=db)
+    if new_stock < threshold_min:
+        emit_telemetry_event(
+            "stock_threshold_triggered",
+            user_id=current_user["id"],
+            properties={
+                "location_id": payload.location_id,
+                "country": country,
+                "product_id": payload.ingredient_id,
+                "product_category": ingredient.category,
+                "current_stock": new_stock,
+                "threshold_min": threshold_min,
+                "unit": ingredient.unit,
+                "currency": "USD" if country == "US" else "COP",
+            },
+        )
 
     return IngredientExitResponse(
         id=exit_record.id,  # type: ignore[arg-type]
