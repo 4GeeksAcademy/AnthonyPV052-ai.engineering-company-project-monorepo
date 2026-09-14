@@ -25,6 +25,8 @@ La API quedará accesible en `http://localhost:8020`.
 
 ## Ejecutar sin Docker
 
+### Opción A — Con `uv` (recomendado)
+
 Asegúrate de tener Python >= 3.11 y `uv` instalado:
 
 ```bash
@@ -35,14 +37,27 @@ Luego:
 
 ```bash
 cd services/api
-uv sync
-uv run seed
+uv sync          # Instala dependencias (incluyendo prefect para el pipeline)
+uv run seed      # Carga datos de ejemplo
 uv run uvicorn main:app --reload --port 8020
 ```
 
 El comando `seed` carga tanto los proveedores de ejemplo como el histórico de
 `incidents-brasaland.csv` en `data/incidents.json`; puede ejecutarse varias veces
 sin duplicar incidencias.
+
+### Opción B — Con Python del sistema
+
+Si `prefect` ya está instalado globalmente (suele estar preinstalado en entornos
+de desarrollo del monorepo), puedes usar `python3 -m uvicorn` directamente:
+
+```bash
+cd services/api
+python3 -m uvicorn main:app --reload --port 8020
+```
+
+Esto evita recrear el `.venv` local y usa las dependencias globales, incluyendo
+`prefect` y `pandas`.
 
 ## Endpoints
 

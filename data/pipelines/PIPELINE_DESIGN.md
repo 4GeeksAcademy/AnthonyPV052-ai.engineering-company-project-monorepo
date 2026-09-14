@@ -503,6 +503,31 @@ def backfill_weekly_performance(start_week: date, end_week: date):
     while current <= end_week:
         run_business_performance_pipeline(week_start=current)
         current += timedelta(days=7)
+
+### 6) Entrypoint CLI
+
+El pipeline puede ejecutarse directamente desde la terminal sin necesidad de un orquestador Prefect:
+
+```bash
+# Ejecutar pipeline para una semana especifica
+python -m data.pipelines.pipeline --week-start 2026-08-31
+
+# Ejecutar pipeline para la semana mas reciente (lunes anterior a hoy)
+python -m data.pipelines.pipeline
+
+# Con logging detallado
+python -m data.pipelines.pipeline --week-start 2026-08-31 --verbose
+```
+
+**Frecuencia de ejecucion:** La ejecucion prevista es **semanal, cada lunes a las 06:00 UTC** (antes del inicio de la operacion). El encargado de operaciones (Felipe) debe tener los numeros frescos al llegar. En v1 el disparo es manual via CLI o endpoint `POST /reporting/pipeline-runs`; en v2 se integrara con un scheduler (cron o Prefect schedules).
+
+**Archivo principal:** `data/pipelines/pipeline.py` -- contiene el bloque `if __name__ == "__main__":` que invoca `main()`, la cual parsea argumentos CLI y ejecuta el flow `run_business_performance_pipeline()`.
+
+```python
+# Bloque CLI en data/pipelines/pipeline.py:
+if __name__ == "__main__":
+    main()  # argparse: --week-start, --verbose
+```
 ```
 
 ---
@@ -516,16 +541,16 @@ El módulo `services/reporting/` expone tres endpoints REST, todos bajo un route
 | Endpoint | Método | Propósito | Respuesta |
 |---|---|---|---|
 | `GET /reporting/status` | `GET` | Estado del pipeline: última corrida, si hay una ejecución en curso, próxima ejecución programada | `{"last_run": {...}, "current": "idle|running", "next_scheduled": "..."}` |
-| `POST /reporting/run` | `POST` | Disparo manual del pipeline para una semana específica (o la más reciente por defecto) | `{"status": "accepted", "run_id": "...", "week_start": "..."}` |
-| `GET /reporting/kpis` | `GET` | Feed de datos para el dashboard: devuelve los KPIs de una semana (por defecto la más reciente), para todos los locales o filtrado por `location_id` | `{"week_start": "...", "locations": [...]}` (mismo formato que `weekly-location-performance`) |
+| `POST /reporting/pipeline-runs` | `POST` | Disparo manual del pipeline para una semana específica (o la más reciente por defecto) | `{"status": "accepted", "run_id": "...", "week_start": "..."}` |
+| `GET /reporting/weekly-location-performance` | `GET` | Feed de datos para el dashboard: devuelve los KPIs de una semana (por defecto la más reciente), para todos los locales o filtrado por `location_id` | `{"week_start": "...", "locations": [...]}` (mismo formato que `weekly-location-performance`) |
 
 ### 2) Qué función o flow llama cada endpoint
 
 | Endpoint | Archivo en `data/pipelines/` | Función/Flow invocada |
 |---|---|---|
-| `GET /reporting/status` | `data/pipelines/business_performance.py` | `get_pipeline_status()` — función que consulta `reporting.pipeline_runs` y devuelve metadata de la última corrida |
-| `POST /reporting/run` | `data/pipelines/business_performance.py` | `run_business_performance_pipeline(week_start=...)` — flow de Prefect que ejecuta todo el pipeline (extracción → transformación → carga). El endpoint devuelve inmediatamente con `"status": "accepted"` mientras el flow corre en segundo plano (o en un thread asíncrono). |
-| `GET /reporting/kpis` | `data/pipelines/business_performance.py` | `get_weekly_kpis(week_start=..., location_id=...)` — función que consulta `reporting.weekly_location_performance` y opcionalmente filtra por local |
+| `GET /reporting/pipeline-runs/latest` | `data/pipelines/pipeline.py` | `get_pipeline_status()` (en services/reporting/router.py) — función que consulta `reporting.pipeline_runs` y devuelve metadata de la última corrida |
+| `POST /reporting/pipeline-runs` | `data/pipelines/pipeline.py` | `run_business_performance_pipeline(week_start=...)` -- flow de Prefect — flow de Prefect que ejecuta todo el pipeline (extracción → transformación → carga). El endpoint devuelve inmediatamente con `"status": "accepted"` mientras el flow corre en segundo plano (o en un thread asíncrono). |
+| `GET /reporting/weekly-location-performance` | `data/pipelines/pipeline.py` (via router) | `get_weekly_kpis(week_start=..., location_id=...)` -- consulta directa a `weekly_location_performance` — función que consulta `reporting.weekly_location_performance` y opcionalmente filtra por local |
 
 **Ninguna lógica ETL vive en `services/reporting/`.** Los endpoints son solo una capa de presentación que invoca funciones definidas en `data/pipelines/business_performance.py`. El archivo `services/reporting/main.py` contiene únicamente los routers y la lógica de serialización/respuesta HTTP.
 
