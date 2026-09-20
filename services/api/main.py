@@ -30,6 +30,8 @@ import logging
 from fastapi import Request
 
 from telemetry_util import emit_api_perf_event, emit_api_error_event, emit_telemetry_event
+from celery.result import AsyncResult
+from celery_app import celery_app
 
 logger = logging.getLogger("api.timing")
 
@@ -136,6 +138,22 @@ app.include_router(inventory_router)
 app.include_router(telemetry_router)
 app.include_router(report_router)
 app.include_router(reporting_router)
+
+
+@app.get("/tasks/{task_id}")
+def get_task_status(task_id: str) -> dict[str, object]:
+    """Consulta el estado real de Celery y su resultado cuando termina."""
+    result = AsyncResult(task_id, app=celery_app)
+    state = result.status.lower()
+    # Celery exposes RETRY, but the public contract intentionally has four
+    # lifecycle states. A retry is still actively being processed.
+    if state == "retry":
+        state = "started"
+    return {
+        "task_id": task_id,
+        "status": state,
+        "result": result.result if state == "success" else (str(result.result) if state == "failure" else None),
+    }
 
 
 @app.exception_handler(RequestValidationError)

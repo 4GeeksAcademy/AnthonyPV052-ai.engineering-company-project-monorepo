@@ -16,7 +16,7 @@ import logging
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import text
 
 # ---------------------------------------------------------------------------
@@ -32,8 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from pipelines.pipeline import (  # noqa: E402
     get_source_engine,
     get_target_engine,
-    run_business_performance_pipeline,
 )
+from tasks import run_pipeline
 
 logger = logging.getLogger("reporting.router")
 
@@ -190,7 +190,7 @@ def get_pipeline_status(current_user: dict = Depends(get_current_user)) -> dict[
 # ========================================================================
 
 
-@router.post("/pipeline-runs")
+@router.post("/pipeline-runs", status_code=status.HTTP_202_ACCEPTED)
 def trigger_pipeline_run(
     week_start: str | None = Query(
         default=None,
@@ -210,36 +210,6 @@ def trigger_pipeline_run(
     Raises:
         HTTPException 500: Si el pipeline falla.
     """
-    try:
-        resolved_week: date | None = None
-        if week_start:
-            resolved_week = date.fromisoformat(week_start)
+    task = run_pipeline.delay(week_start)
+    return {"task_id": task.id}
 
-        result = run_business_performance_pipeline(
-            week_start=resolved_week
-        )
-
-        # Convertir datetime a string para JSON
-        if "snapshot_path" in result and result["snapshot_path"] is not None:
-            result["snapshot_path"] = str(result["snapshot_path"])
-
-        logger.info(
-            "Pipeline manual completado: %s stops %d locales",
-            result.get("week_start"),
-            result.get("locations"),
-        )
-
-        return {
-            "status": "ok",
-            "result": result,
-        }
-
-    except Exception as exc:
-        logger.exception("Pipeline manual falló")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "status": "error",
-                "message": f"El pipeline falló: {exc}",
-            },
-        )
