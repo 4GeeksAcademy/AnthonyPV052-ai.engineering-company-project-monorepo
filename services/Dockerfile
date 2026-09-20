@@ -6,13 +6,15 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy dependency files first (Docker layer caching)
-COPY api/pyproject.toml api/uv.lock ./
+COPY services/api/pyproject.toml services/api/uv.lock ./
 
 # Sync dependencies using uv
 RUN uv sync --frozen
 
 # Copy the rest of the application code
-COPY api/ ./
+COPY services/api/ ./
+COPY services/reporting/ /app/reporting/
+COPY data/ /app/data/
 
 # Expose the port the API runs on
 EXPOSE 8020
