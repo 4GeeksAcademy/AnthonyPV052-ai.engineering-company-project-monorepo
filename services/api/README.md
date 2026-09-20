@@ -23,6 +23,28 @@ docker compose up --build backend
 
 La API quedará accesible en `http://localhost:8020`.
 
+El worker corre separado: `docker compose up worker` para iniciarlo y
+`docker compose stop worker` para detenerlo. Flower está disponible en
+`http://localhost:5555`. Sin Docker, desde este directorio, usa
+`REDIS_URL=redis://localhost:6379/0 celery -A celery_app worker --loglevel=INFO`.
+
+`POST /reporting/pipeline-runs` devuelve `202 {"task_id": "..."}` y
+`GET /tasks/{task_id}` consulta `pending`, `started`, `success` o `failure`.
+
+### Stack local sin Docker
+
+Instala Redis con el gestor del sistema y sincroniza dependencias con `uv sync`.
+Después, desde `services/api`, ejecuta en terminales separadas:
+
+```bash
+sudo service redis-server start
+REDIS_URL=redis://127.0.0.1:6379/0 uv run celery -A celery_app worker --loglevel=INFO -E
+REDIS_URL=redis://127.0.0.1:6379/0 uv run python -m flower --broker=redis://127.0.0.1:6379/0 flower --port=5555 --address=0.0.0.0
+```
+
+Flower queda accesible en `http://localhost:5555`. La opción `-E` habilita los
+eventos necesarios para que Flower muestre tareas en ejecución y completadas.
+
 ## Ejecutar sin Docker
 
 ### Opción A — Con `uv` (recomendado)
