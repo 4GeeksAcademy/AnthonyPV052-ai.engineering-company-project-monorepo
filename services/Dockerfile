@@ -15,6 +15,7 @@ RUN uv sync --frozen
 COPY services/api/ ./
 COPY services/reporting/ /app/reporting/
 COPY data/ /app/data/
+COPY docs/company-knowledge-base/ /app/docs/company-knowledge-base/
 
 # Expose the port the API runs on
 EXPOSE 8020

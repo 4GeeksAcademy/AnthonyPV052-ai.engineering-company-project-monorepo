@@ -19,6 +19,9 @@ dependencies = [
   "prefect>=3.0.0",
   "celery[redis]>=5.4.0",
   "flower>=2.0,<3",
+  "qdrant-client>=1.19.1",
+  "fastembed>=0.8.0",
+  "openai>=3.16.2",
 ]
 
 [project.scripts]
