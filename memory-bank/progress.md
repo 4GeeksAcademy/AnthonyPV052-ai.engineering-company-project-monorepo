@@ -6,6 +6,9 @@
 - Añadir features para resolver los problemas pendientes.
 
 ## avances recientes
+- Se implementó el indexador RAG de Brasaland: parsing semántico de la base de
+	conocimiento, embeddings mediante gateway configurable, colección Qdrant
+	`brasaland_knowledge` e idempotencia clean-and-reload documentada.
 - Se ajustó el analizador de incidencias para compatibilidad con incidents-brasaland.csv.
 - Se actualizó el expected de evaluación de incidencias con las métricas del dataset objetivo.
 - Se implementó un backend de proveedores con FastAPI, TinyDB y seeder idempotente.
@@ -20,3 +23,8 @@
 - Se añadió el gestor de incidencias al backoffice: registro con validación y feedback, listado filtrable con actualización de estado y panel de resumen resiliente.
 - Se conectó el seeder del histórico `incidents-brasaland.csv` al almacenamiento TinyDB del API y al comando estándar de seed.
 - Se añadió el job nocturno independiente de FastAPI: migración `job_runs`, máquina de estados con lock distribuido, exportación idempotente de telemetría y documentación del cron externo.
+- Se completó la validación de Fase 5/5b/6 del RAG: pruebas unitarias aisladas, evaluación Recall@3 reproducible, respuesta segura sin contexto y exposición separada de `setup`, `embed`, `retrieve` y `query`.
+- Se implementó la fase 2 del RAG en `data/pipelines/rag.py`: recuperación
+  semántica con umbral, generación separada y API pública `query()` con reglas
+  anti-alucinación, alérgenos y monedas.
+- Se añadió POST `/knowledge/query` en FastAPI, conectado exclusivamente a `data/pipelines.rag.query`, y página BackOffice `/backoffice/knowledge` con estados de carga y error.
