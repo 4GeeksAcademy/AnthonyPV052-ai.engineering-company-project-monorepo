@@ -1,4 +1,7 @@
 .env.local
+# Dependencies and build artifacts
+node_modules/
+**/.next/
 __pycache__/
 .env*
 .env
