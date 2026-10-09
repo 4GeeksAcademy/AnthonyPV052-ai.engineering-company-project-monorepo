@@ -2,3 +2,9 @@
 # Dependencies and build artifacts
 node_modules/
 **/.next/
+__pycache__/
+.env*
+.env
+.devcontainer/
+Telemetry-context.md
+*.local*
