@@ -116,6 +116,19 @@ export default function BackofficeHomePage() {
         </a>
       </section>
 
+      <section className="rounded-2xl border border-cyan-300/30 bg-cyan-950/20 p-5">
+        <h2 className="text-xl font-bold text-white">Base de conocimiento</h2>
+        <p className="mt-2 max-w-3xl text-sm text-slate-200">
+          Consulta procedimientos, alérgenos y políticas internas con respuestas basadas en la documentación de Brasaland.
+        </p>
+        <a
+          href="/backoffice/knowledge"
+          className="mt-4 inline-flex rounded-full bg-cyan-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900 transition hover:bg-cyan-200"
+        >
+          Abrir consulta
+        </a>
+      </section>
+
       <DashboardMetrics />
     </div>
   );

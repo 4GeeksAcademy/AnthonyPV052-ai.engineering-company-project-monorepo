@@ -12,6 +12,7 @@ from database import init_db
 from routes.auth import router as auth_router
 from routes.incidents import router as incidents_router
 from routes.inventory import router as inventory_router
+from routes.knowledge import router as knowledge_router
 from routes.profiles import router as profiles_router
 from routes.suppliers import router as suppliers_router
 from routes.users import router as users_router
@@ -135,6 +136,7 @@ app.include_router(users_router)
 app.include_router(profiles_router)
 app.include_router(incidents_router)
 app.include_router(inventory_router)
+app.include_router(knowledge_router)
 app.include_router(telemetry_router)
 app.include_router(report_router)
 app.include_router(reporting_router)
