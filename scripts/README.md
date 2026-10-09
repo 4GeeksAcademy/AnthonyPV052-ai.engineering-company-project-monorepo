@@ -18,3 +18,10 @@ python scripts/seed_incidents.py --validate-only
 
 python scripts/seed_incidents.py
 ```
+
+## `nightly_export.py`
+
+Exporta la telemetría del día anterior, ejecuta el pipeline y registra la
+corrida en `job_runs`. Es un proceso independiente de FastAPI; el cron externo
+y las variables necesarias están documentados en
+[`docs/nightly-export.md`](../docs/nightly-export.md).
