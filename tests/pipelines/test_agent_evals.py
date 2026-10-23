@@ -35,13 +35,17 @@ def trace(request: pytest.FixtureRequest) -> list[dict]:
 def test_trace_has_retrieval_before_answer(trace: list[dict]) -> None:
     nodes = [event["node"] for event in trace if event.get("event") == "node_completed"]
     assert "retrieve" in nodes
-    answer_nodes = [node for node in ("generate", "no_context") if node in nodes]
+    answer_nodes = [node for node in ("generate", "no_context", "incident_answer") if node in nodes]
     assert answer_nodes
     assert nodes.index("retrieve") < nodes.index(answer_nodes[0])
 
 
 def test_trace_has_one_terminal_answer(trace: list[dict]) -> None:
-    terminal_nodes = [event["node"] for event in trace if event.get("node") in {"generate", "no_context"}]
+    terminal_nodes = [
+        event["node"]
+        for event in trace
+        if event.get("node") in {"generate", "no_context", "incident_answer"}
+    ]
     assert len(terminal_nodes) == 1
     assert any(event.get("event") == "run_completed" for event in trace)
 
