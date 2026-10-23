@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,9 @@ if str(_API_DIR) not in sys.path:
 
 from openai import OpenAI  # noqa: E402
 from qdrant_client import QdrantClient  # noqa: E402
+
+QDRANT_RETRIEVAL_TIMEOUT_SECONDS = float(os.getenv("RAG_QDRANT_TIMEOUT_SECONDS", "20"))
+QDRANT_RETRIEVAL_ATTEMPTS = max(1, int(os.getenv("RAG_QDRANT_RETRIEVAL_ATTEMPTS", "2")))
 
 from rag import COLLECTION_NAME, embed, gateway_model_name, setup  # noqa: E402
 
@@ -31,7 +35,11 @@ def _required_env(name: str) -> str:
 
 
 def _qdrant_client() -> QdrantClient:
-    return QdrantClient(url=os.getenv("QDRANT_URL", "http://localhost:6333"))
+    return QdrantClient(
+        url=os.getenv("QDRANT_URL", "http://localhost:6333"),
+        check_compatibility=False,
+        timeout=QDRANT_RETRIEVAL_TIMEOUT_SECONDS,
+    )
 
 
 def retrieve(query: str, *, k: int = 5, min_score: float) -> list[dict]:
@@ -41,13 +49,40 @@ def retrieve(query: str, *, k: int = 5, min_score: float) -> list[dict]:
     if k < 1:
         raise ValueError("k debe ser mayor que cero")
 
-    points = _qdrant_client().query_points(
-        collection_name=COLLECTION_NAME,
-        query=embed(query),
-        limit=k,
-        with_payload=True,
-        with_vectors=False,
-    ).points
+    vector = embed(query)
+    points = None
+    for attempt in range(QDRANT_RETRIEVAL_ATTEMPTS):
+        try:
+            points = _qdrant_client().query_points(
+                collection_name=COLLECTION_NAME,
+                query=vector,
+                limit=k,
+                with_payload=True,
+                with_vectors=False,
+            ).points
+            break
+        except Exception as exc:
+            # Retry only request timeouts. DNS, connection, and configuration
+            # failures are surfaced immediately rather than hidden by retries.
+            causes = [exc]
+            seen_ids = set()
+            is_connect_timeout = False
+            while causes:
+                cause = causes.pop()
+                if id(cause) in seen_ids:
+                    continue
+                seen_ids.add(id(cause))
+                if type(cause).__name__ == "ConnectTimeout":
+                    is_connect_timeout = True
+                causes.extend(arg for arg in getattr(cause, "args", ()) if isinstance(arg, BaseException))
+                nested = getattr(cause, "__cause__", None) or getattr(cause, "__context__", None)
+                if nested is not None:
+                    causes.append(nested)
+            if not is_connect_timeout or attempt + 1 >= QDRANT_RETRIEVAL_ATTEMPTS:
+                raise
+            time.sleep(min(0.5 * (2**attempt), 2.0))
+    else:
+        raise RuntimeError("Qdrant retrieval failed without an exception")
     return [
         dict(point.payload or {})
         for point in points
