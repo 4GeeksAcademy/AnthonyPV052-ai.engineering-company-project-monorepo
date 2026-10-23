@@ -26,9 +26,15 @@ RETRIEVAL_TIMEOUT_SECONDS = float(os.getenv("AGENT_RAG_RETRIEVAL_TIMEOUT_SECONDS
 
 
 def retrieve_node(state: AgentState) -> dict[str, object]:
-    # In mixed queries (incident_then_rag), both sources are always executed:
-    # the retrieval already has timeout protection via ThreadPoolExecutor and
-    # the Qdrant collection is now populated, so there is no reason to skip it.
+    # In mixed queries (incident_then_rag), if the incident was already confirmed
+    # by the incident tool, skip the RAG retrieval to reduce latency.
+    if state.get("route") == "incident_then_rag" and state.get("incident"):
+        logger.info("Incidencia confirmada en ruta mixta; omitiendo RAG")
+        output: dict[str, object] = {"context": [], "retrieval_error": "skipped_after_incident"}
+        trace_output = {"outcome": "skipped_after_incident"}
+        record_node(state, "retrieve", trace_output)
+        return output
+
     try:
         future = _RETRIEVAL_EXECUTOR.submit(
             retrieve,
