@@ -5,3 +5,4 @@ __pycache__/
 .devcontainer/
 Telemetry-context.md
 *.local*
+agent-traces/
