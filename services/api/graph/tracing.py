@@ -30,8 +30,43 @@ def record_node(state: dict[str, Any], node: str, output: dict[str, Any]) -> Non
     _write(state["trace_id"], {"trace_id": state["trace_id"], "event": "node_completed", "node": node, "output": output, "timestamp": datetime.now(timezone.utc).isoformat()})
 
 
-def finish_trace(trace_id: str, answer: str) -> None:
-    _write(trace_id, {"trace_id": trace_id, "event": "run_completed", "answer": answer, "timestamp": datetime.now(timezone.utc).isoformat()})
+def finish_trace(
+    trace_id: str,
+    answer: str,
+    *,
+    sources: list[str] | None = None,
+    execution_order: list[str] | None = None,
+) -> None:
+    event: dict[str, Any] = {
+        "trace_id": trace_id,
+        "event": "run_completed",
+        "answer": answer,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if sources is not None:
+        event["sources"] = sources
+    if execution_order is not None:
+        event["execution_order"] = execution_order
+    _write(trace_id, event)
+
+
+def actual_sources(events: list[dict[str, Any]]) -> list[str]:
+    """Return sources whose node was actually reached, in first-use order."""
+    sources: list[str] = []
+    for event in events:
+        if event.get("event") != "node_completed":
+            continue
+        node = event.get("node")
+        output = event.get("output") or {}
+        used: list[str] = []
+        if node == "retrieve" and output.get("outcome") != "skipped":
+            used.append("rag")
+        elif node == "incident_tool":
+            used.append("incident_tool")
+        for source in used:
+            if source not in sources:
+                sources.append(source)
+    return sources
 
 
 def read_trace(trace_id: str) -> list[dict[str, Any]]:
