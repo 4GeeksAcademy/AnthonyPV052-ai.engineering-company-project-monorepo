@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-/* Next.js rewrites /api/:path* → http://localhost:8020/:path*
-   (ver next.config.ts).  Usamos /api/ para evitar CORS y aprovechar
+/* Next.js rewrites /api/:path* → API_UPSTREAM_URL (ver next.config.ts).
+  Usamos /api/ para evitar CORS y aprovechar
    el proxy del servidor Next.js. */
 const API_BASE = "/api";
 

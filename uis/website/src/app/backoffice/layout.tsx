@@ -4,6 +4,7 @@ import LogoutButton from "@/components/auth/LogoutButton";
 import ProfileNavigation from "@/components/auth/ProfileNavigation";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import TelemetryProvider from "@/components/TelemetryProvider";
+import BackofficeSidebar from "@/components/backoffice/BackofficeSidebar";
 
 export default function BackofficeLayout({ children }: { children: ReactNode }) {
   return (
@@ -28,7 +29,10 @@ export default function BackofficeLayout({ children }: { children: ReactNode }) 
               </div>
             </div>
           </header>
-          <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+          <div className="mx-auto flex w-full max-w-7xl items-start">
+            <BackofficeSidebar />
+            <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+          </div>
         </div>
       </TelemetryProvider>
     </ProtectedRoute>
