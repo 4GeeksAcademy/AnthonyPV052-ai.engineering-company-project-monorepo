@@ -4,7 +4,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
 from graph.state import AgentState
 from graph.tracing import record_node
-from graph.incident_tool import (
+# ── MCP-based incident tool (uses langchain-mcp-adapters) ───────────
+from graph.incident_tool_adapter import (
     IncidentToolInput,
     extract_incident_filters,
     extract_incident_id,
