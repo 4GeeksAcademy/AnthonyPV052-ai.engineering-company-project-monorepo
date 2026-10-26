@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -11,7 +12,7 @@ for path in (ROOT, API_DIR):
         sys.path.insert(0, str(path))
 
 from graph.routing import route_sources  # noqa: E402
-from graph.incident_tool import IncidentToolInput, IncidentToolOutput  # noqa: E402
+from graph.incident_tool_adapter import IncidentToolInput, IncidentToolOutput  # noqa: E402
 from graph.nodes import generate_node, no_context_node, retrieve_node  # noqa: E402
 
 
@@ -61,13 +62,13 @@ def test_incident_tool_input_output_contract() -> None:
     assert result.outcome == "not_found"
 
 
-def test_incident_transport_is_get_and_passes_configured_bearer(monkeypatch) -> None:
-    from contextlib import nullcontext
-    from graph import incident_tool
+def test_incident_transport_uses_mcp_adapter(monkeypatch) -> None:
+    """Verify the adapter calls the MCP tool via langchain-mcp-adapters."""
+    from graph import incident_tool_adapter
     from incident_models import IncidentResponse
 
-    captured = {}
-    payload = IncidentResponse(
+    called_with = {}
+    expected_incident = IncidentResponse(
         id="ABC-123",
         title="Broken oven",
         description="Oven is not heating",
@@ -75,19 +76,31 @@ def test_incident_transport_is_get_and_passes_configured_bearer(monkeypatch) -> 
         status="open",
         origin="branch",
         branch="central",
-    ).model_dump_json().encode()
+    )
 
-    def fake_urlopen(request, timeout):
-        captured["request"] = request
-        captured["timeout"] = timeout
-        return nullcontext(type("Response", (), {"read": lambda self: payload})())
+    async def fake_async_call(tool_name, arguments):
+        called_with["tool_name"] = tool_name
+        called_with["arguments"] = arguments
+        return json.loads(expected_incident.model_dump_json())
 
-    monkeypatch.setenv("INCIDENTS_API_TOKEN", "test-service-token")
-    monkeypatch.setattr(incident_tool, "urlopen", fake_urlopen)
-    assert incident_tool._fetch_incident("ABC-123").id == "ABC-123"
-    assert captured["request"].method == "GET"
-    assert captured["request"].get_header("Authorization") == "Bearer test-service-token"
-    assert captured["timeout"] == 7.0
+    monkeypatch.setattr(
+        incident_tool_adapter, "_async_call_mcp_tool", fake_async_call
+    )
+    monkeypatch.setenv("BRASALAND_MCP_SERVER_URL", "http://localhost:8100/mcp")
+
+    result = incident_tool_adapter.lookup_incident(
+        IncidentToolInput(ticket_id="ABC-123")
+    )
+    assert result.outcome == "found"
+    assert result.incident is not None
+    assert result.incident.id == "ABC-123"
+    assert called_with["tool_name"] == "incidents_get"
+    assert called_with["arguments"] == {"incident_id": "ABC-123"}
+
+    # Also test list_incidents
+    incident_tool_adapter.list_incidents({"status": "open"})
+    assert called_with["tool_name"] == "incidents_list"
+    assert "status" in called_with["arguments"]
 
 
 def test_trace_sources_exclude_skipped_rag_and_preserve_execution_order() -> None:
@@ -105,23 +118,26 @@ def test_trace_sources_exclude_skipped_rag_and_preserve_execution_order() -> Non
 
 
 def test_missing_incident_is_reported_as_not_found(monkeypatch) -> None:
-    from graph import incident_tool
+    from graph import incident_tool_adapter
 
-    monkeypatch.setattr(incident_tool, "_fetch_incident", lambda incident_id: None)
-    result = incident_tool.lookup_incident(IncidentToolInput(ticket_id="ABC-404"))
+    async def fake_not_found(tool_name, arguments):
+        return {"error": "not_found", "code": "not_found", "message": "Not found", "http_status": 404}
+
+    monkeypatch.setattr(incident_tool_adapter, "_async_call_mcp_tool", fake_not_found)
+    result = incident_tool_adapter.lookup_incident(IncidentToolInput(ticket_id="ABC-404"))
     assert result.outcome == "not_found"
     assert result.incident is None
     assert result.error is None
 
 
 def test_incident_service_failure_returns_typed_fallback(monkeypatch) -> None:
-    from graph import incident_tool
+    from graph import incident_tool_adapter
 
-    def fail(incident_id):
+    async def fake_service_error(tool_name, arguments):
         raise ConnectionError("private infrastructure detail")
 
-    monkeypatch.setattr(incident_tool, "_fetch_incident", fail)
-    result = incident_tool.lookup_incident(IncidentToolInput(ticket_id="ABC-500"))
+    monkeypatch.setattr(incident_tool_adapter, "_async_call_mcp_tool", fake_service_error)
+    result = incident_tool_adapter.lookup_incident(IncidentToolInput(ticket_id="ABC-500"))
     assert result.outcome == "service_error"
     assert result.incident is None
     assert result.error == "service_error"
