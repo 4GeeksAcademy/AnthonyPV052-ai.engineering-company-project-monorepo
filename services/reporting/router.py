@@ -25,10 +25,18 @@ from sqlalchemy import text
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
+api_dir = Path(__file__).resolve().parent.parent / "api"
+if api_dir.is_dir():
+    sys.path.insert(0, str(api_dir))
 from security import get_current_user  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
+data_dir_candidates = (
+    Path(__file__).resolve().parent.parent / "data",  # Docker: /app/data
+    Path(__file__).resolve().parents[2] / "data",  # Monorepo checkout
+)
+data_dir = next((path for path in data_dir_candidates if path.is_dir()), None)
+if data_dir is not None:
+    sys.path.insert(0, str(data_dir))
 from pipelines.pipeline import (  # noqa: E402
     get_source_engine,
     get_target_engine,

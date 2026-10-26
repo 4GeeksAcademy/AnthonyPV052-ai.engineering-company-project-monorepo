@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,11 +21,19 @@ from qdrant_client import QdrantClient, models
 COLLECTION_NAME = "brasaland_knowledge"
 COMPANY = "Brasaland"
 _MAX_CHUNK_CHARS = 1200
+EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("RAG_EMBEDDING_TIMEOUT_SECONDS", "30"))
+EMBEDDING_RETRIES = int(os.getenv("RAG_EMBEDDING_RETRIES", "1"))
 
 
 def _load_local_env() -> None:
     """Carga el .env de la raíz al ejecutar el API fuera de Docker."""
-    candidates = (Path(__file__).resolve().parents[2] / ".env", Path.cwd() / ".env")
+    module_parents = Path(__file__).resolve().parents
+    candidates = [Path.cwd() / ".env"]
+    # En Docker el módulo está directamente bajo /app, que no tiene una
+    # raíz de monorepo. Compose ya inyecta las variables y sólo debe usarse
+    # el .env del checkout cuando realmente estamos dentro de él.
+    if len(module_parents) > 2:
+        candidates.insert(0, module_parents[2] / ".env")
     env_file = next((path for path in candidates if path.is_file()), None)
     if env_file is None:
         return
@@ -64,10 +73,24 @@ def embed(text: str) -> list[float]:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("text debe ser un texto no vacío")
 
-    client = OpenAI(api_key=_env("LLM_API_KEY"), base_url=_env("LLM_GATEWAY"))
-    response = client.embeddings.create(
-        model=gateway_model_name(_env("EMBED_MODEL")), input=text
+    client = OpenAI(
+        api_key=_env("LLM_API_KEY"),
+        base_url=_env("LLM_GATEWAY"),
+        timeout=EMBEDDING_TIMEOUT_SECONDS,
+        max_retries=0,
     )
+    for attempt in range(EMBEDDING_RETRIES + 1):
+        try:
+            response = client.embeddings.create(
+                model=gateway_model_name(_env("EMBED_MODEL")), input=text
+            )
+            break
+        except Exception as exc:
+            # Only retry a gateway timeout once; DNS/connection/configuration
+            # failures cannot be repaired by repeating the same request.
+            if type(exc).__name__ != "APITimeoutError" or attempt >= EMBEDDING_RETRIES:
+                raise
+            time.sleep(min(0.5 * (2**attempt), 2.0))
     vector = response.data[0].embedding
     return [float(value) for value in vector]
 

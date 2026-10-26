@@ -4,11 +4,15 @@ import { FormEvent, useState } from "react";
 
 interface KnowledgeResponse {
   answer: string;
+  trace_id: string;
+  sources: string[];
+  execution_order: string[];
 }
 
 export default function KnowledgePage() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
+  const [trace, setTrace] = useState<Pick<KnowledgeResponse, "trace_id" | "sources" | "execution_order"> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,6 +28,7 @@ export default function KnowledgePage() {
     setLoading(true);
     setError(null);
     setAnswer(null);
+    setTrace(null);
     try {
       const response = await fetch("/api/knowledge/query", {
         method: "POST",
@@ -35,6 +40,11 @@ export default function KnowledgePage() {
         throw new Error(payload && "detail" in payload && payload.detail ? payload.detail : "No se pudo obtener una respuesta.");
       }
       setAnswer(payload.answer);
+      setTrace({
+        trace_id: payload.trace_id,
+        sources: payload.sources,
+        execution_order: payload.execution_order,
+      });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "No se pudo conectar con el servicio de conocimiento.");
     } finally {
@@ -78,6 +88,13 @@ export default function KnowledgePage() {
           <div className="mt-6 rounded-xl border border-emerald-300/30 bg-emerald-950/20 p-5">
             <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-emerald-200">Respuesta</h2>
             <p className="mt-3 whitespace-pre-wrap leading-7 text-slate-100">{answer}</p>
+            {trace && (
+              <div className="mt-5 border-t border-emerald-300/20 pt-4 text-xs text-emerald-100/80">
+                <p><span className="font-bold">Fuentes:</span> {trace.sources.join(" → ")}</p>
+                <p className="mt-1"><span className="font-bold">Orden de ejecución:</span> {trace.execution_order.join(" → ")}</p>
+                <p className="mt-1 break-all"><span className="font-bold">Trace ID:</span> {trace.trace_id}</p>
+              </div>
+            )}
           </div>
         )}
       </section>

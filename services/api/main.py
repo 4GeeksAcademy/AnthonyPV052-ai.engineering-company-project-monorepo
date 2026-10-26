@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 
 from database import init_db
 from routes.auth import router as auth_router
@@ -20,11 +21,7 @@ from telemetry.router import router as telemetry_router
 from telemetry.report import router as report_router
 
 # --- Reporting (pipeline de desempeño de negocio) ---
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "reporting"))
-from router import router as reporting_router  # noqa: E402
+from reporting.router import router as reporting_router
 
 import time
 import logging
@@ -39,8 +36,19 @@ logger = logging.getLogger("api.timing")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Inicializa el esquema de base de datos SQLModel al arrancar la aplicación."""
-    init_db()  # Crea las tablas Ingredient, IngredientEntry, IngredientExit en Supabase
+    """Inicializa la base de datos si Supabase está disponible al arrancar.
+
+    Una caída temporal del servicio PostgreSQL externo no debe impedir que
+    arranquen el API y las rutas que no dependen de SQL.
+    """
+    try:
+        init_db()  # Crea las tablas SQLModel en Supabase.
+    except OperationalError:
+        logger.exception(
+            "No se pudo conectar a DATABASE_URL durante el arranque; "
+            "el API seguirá disponible y los endpoints SQL fallarán hasta "
+            "que la base de datos vuelva a estar accesible."
+        )
     yield
 
 
