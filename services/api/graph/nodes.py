@@ -20,6 +20,11 @@ from data.pipelines.rag import (
     generate_answer,
     DEFAULT_MIN_SCORE,
 )
+from memory.generation import generate_answer_with_memory
+from memory.store import (
+    create_proposal,
+    search_memories,
+)
 
 logger = logging.getLogger("api.agent")
 _RETRIEVAL_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent-retrieval")
@@ -202,6 +207,28 @@ def incident_answer_node(state: AgentState) -> dict[str, object]:
 
 
 def generate_node(state: AgentState) -> dict[str, object]:
+    if not state.get("context") and not state.get("incident") and not state.get("incidents"):
+        # A proposal decision may be bundled with an ordinary question. Keep
+        # the normal no-context answer for that question, but report the
+        # proposal outcome rather than silently dropping it.
+        outcome = state.get("memory_proposal")
+        answer = "No encontré información suficiente en la base de conocimiento de Brasaland."
+        if outcome:
+            status = outcome.get("status")
+            if status == "approved":
+                answer = "La memoria propuesta quedó guardada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "rejected":
+                answer = "La propuesta de memoria fue descartada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "edited":
+                answer = "La propuesta editada quedó guardada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "discarded":
+                answer = "La propuesta anterior fue descartada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "pending":
+                answer = "La propuesta sigue pendiente de una respuesta clara. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+        output = {"answer": answer, "memory_proposal": outcome}
+        record_node(state, "generate", output)
+        return output
+
     if state.get("retrieval_error"):
         if state.get("incident") and state["incident"].get("status"):
             incident = state["incident"]
@@ -224,6 +251,12 @@ def generate_node(state: AgentState) -> dict[str, object]:
         return output
 
     context = list(state["context"])
+    session_id = state.get("session_id", state["trace_id"])
+    try:
+        memories = search_memories(state["question"], location_filter=None)
+    except Exception:
+        logger.exception("No se pudo recuperar la memoria episódica (BD no disponible)")
+        memories = []
 
     # Para consultas mixtas: añadir la lista de incidencias al contexto del RAG
     incidents = state.get("incidents")
@@ -255,16 +288,21 @@ def generate_node(state: AgentState) -> dict[str, object]:
     if incident:
         context.append({
             "source_document": "GET /api/incidents/{id}",
-            "section": "Estado actualizado de incidencia",
             "text": "\n".join(
                 f"{key}: {value}" for key, value in incident.items()
                 if key in {"id", "title", "description", "status", "category", "origin", "branch", "created_at", "updated_at"}
             ),
         })
     try:
-        answer = generate_answer(
-            state["question"],
-            context,
+        memories = search_memories(state["question"], location_filter=None)
+    except Exception:
+        logger.exception("No se pudo recuperar la memoria episódica")
+        memories = []
+    try:
+        answer, suggestion = generate_answer_with_memory(
+            state["question"], context,
+            memory_context=[{"summary": item.summary, "location": item.location, "category": item.category} for item in memories],
+            base_language=state.get("base_language", "es"),
         )
     except Exception as exc:
         logger.exception("No se pudo generar una respuesta RAG")
@@ -279,9 +317,25 @@ def generate_node(state: AgentState) -> dict[str, object]:
         output = {"answer": answer, "generation_error": type(exc).__name__}
         record_node(state, "generate", output)
         return output
-    output = {
-        "answer": answer,
-    }
+    memory_proposal = None
+    if suggestion.should_store and suggestion.summary.strip() and not state.get("pending_proposal_was_present", False):
+        proposal = create_proposal(
+            session_id=session_id,
+            summary=suggestion.summary,
+            location=suggestion.location,
+            category=suggestion.category,
+            confidence=suggestion.confidence,
+            trigger_message=state["question"],
+        )
+        if proposal:
+            confirmation = (
+                f"\n\nWould you like me to remember this for future conversations? “{proposal.proposed_summary}” Reply yes to save it or no to discard it."
+                if state.get("base_language", "es") == "en"
+                else f"\n\n¿Quieres que recuerde esto para futuras conversaciones? «{proposal.proposed_summary}» Responde sí para guardarlo o no para descartarlo."
+            )
+            answer += confirmation
+            memory_proposal = {"id": str(proposal.id), "summary": proposal.proposed_summary, "status": "pending"}
+    output = {"answer": answer, "memory_proposal": memory_proposal or state.get("memory_proposal")}
     record_node(state, "generate", output)
     return output
 

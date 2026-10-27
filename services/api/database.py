@@ -93,9 +93,13 @@ def _get_engine():
     return _engine
 
 
-def init_db() -> None:
-    """Crea todas las tablas definidas como modelos SQLModel (table=True)."""
-    SQLModel.metadata.create_all(_get_engine())
+def init_db(*, exclude_tables: set[str] | None = None) -> None:
+    """Crea tablas SQLModel; migration-owned tables can be explicitly excluded."""
+    tables = [
+        table for table in SQLModel.metadata.sorted_tables
+        if table.name not in (exclude_tables or set())
+    ]
+    SQLModel.metadata.create_all(_get_engine(), tables=tables)
 
 
 def get_db() -> Generator[Session, None, None]:

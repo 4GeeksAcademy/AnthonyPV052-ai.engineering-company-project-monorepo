@@ -36,6 +36,8 @@ def route_context(state: AgentState) -> str:
     # — the incident data may be sufficient to answer.
     if state.get("route") == "incident_then_rag":
         return "generate"
+    if state.get("pending_proposal_was_present"):
+        return "generate"
     return "generate" if state["context"] else "no_context"
 
 

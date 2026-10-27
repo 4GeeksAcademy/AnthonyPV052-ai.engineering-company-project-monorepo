@@ -6,6 +6,9 @@ class AgentState(TypedDict):
 	context: list[dict[str, object]]
 	answer: str
 	trace_id: str
+	session_id: NotRequired[str]
+	base_language: NotRequired[str]
+	memory_proposal: NotRequired[dict[str, object] | None]
 	sources: NotRequired[list[str]]
 	route: NotRequired[str]
 	incident_id: NotRequired[str | None]

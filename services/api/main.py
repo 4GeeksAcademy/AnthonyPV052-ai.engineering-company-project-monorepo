@@ -23,6 +23,9 @@ from telemetry.report import router as report_router
 # --- Reporting (pipeline de desempeño de negocio) ---
 from reporting.router import router as reporting_router
 
+# --- Agent Memory System ---
+from memory.routes import router as memory_router
+
 import time
 import logging
 from fastapi import Request
@@ -42,7 +45,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     arranquen el API y las rutas que no dependen de SQL.
     """
     try:
-        init_db()  # Crea las tablas SQLModel en Supabase.
+        # Memory schema is provisioned by migration 003 (pgvector/partial index).
+        # Do not let SQLModel create incompatible placeholder columns for it.
+        import memory.models  # noqa: F401
+
+        init_db(exclude_tables={"agent_memories", "memory_proposals", "memory_audit_log"})
     except OperationalError:
         logger.exception(
             "No se pudo conectar a DATABASE_URL durante el arranque; "
@@ -148,6 +155,7 @@ app.include_router(knowledge_router)
 app.include_router(telemetry_router)
 app.include_router(report_router)
 app.include_router(reporting_router)
+app.include_router(memory_router)
 
 
 @app.get("/tasks/{task_id}")
