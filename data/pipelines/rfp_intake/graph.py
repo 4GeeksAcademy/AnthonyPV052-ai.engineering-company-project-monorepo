@@ -371,12 +371,22 @@ def _persist_results(state: dict) -> None:
 
         engine = _get_engine()
         with Session(engine) as db:
-            # 1. Update ticket status
+            # 1. Create or update ticket
             ticket = db.get(RFPTicket, state["ticket_id"])
             if ticket:
                 ticket.status = state["status"]
                 ticket.handoff_payload = state.get("handoff_payload")
                 ticket.updated_at = datetime.now(timezone.utc)
+                db.add(ticket)
+            else:
+                ticket = RFPTicket(
+                    ticket_id=state["ticket_id"],
+                    status=state["status"],
+                    handoff_payload=state.get("handoff_payload"),
+                    raw_pdf_path=state.get("file_path", ""),
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                )
                 db.add(ticket)
 
             # 2. Upsert metadata
