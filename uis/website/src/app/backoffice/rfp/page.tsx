@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import dynamic from "next/dynamic";
 import { getStoredToken, clearToken } from "@/lib/auth";
+import RFPDetailPanel from "./RFPDetailPanel";
 
 /* Usamos /api para que Next.js rewrites (next.config.ts) enruten al backend.
    API_UPSTREAM_URL=http://172.17.0.1:8020 definido en docker-compose.yml.
@@ -102,12 +102,7 @@ const STATUS_TONES: Record<TicketStatus, string> = {
   terminado: "bg-emerald-300/10 text-emerald-100 border-emerald-300/40",
 };
 
-const DEPARTMENT_LABELS: Record<string, string> = {
-  marketing: "Marketing — Camila Ospina",
-  operaciones: "Operaciones — Felipe Guerrero",
-  procurement: "Procurement — Lucía Fernández",
-  training: "Training — Jake Morrison",
-};
+
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getStoredToken();
@@ -409,192 +404,13 @@ export default function RFPPage() {
 
       {/* Ticket Detail */}
       {selectedTicket && (
-        <section className="rounded-2xl border border-slate-700 bg-slate-900 p-6">
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-white">
-                Ticket: <span className="font-mono text-orange-200">{selectedTicket.ticket_id.slice(0, 8)}…</span>
-              </h2>
-              <p className="mt-1 text-sm text-slate-400">
-                {selectedTicket.created_at
-                  ? new Date(selectedTicket.created_at).toLocaleString("es-CO")
-                  : ""}
-              </p>
-            </div>
-            <StatusBadge status={selectedTicket.status} />
-          </div>
-
-          {/* Metadata */}
-          {selectedTicket.metadata && (
-            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoCard label="Cliente" value={selectedTicket.metadata.client_name} />
-              <InfoCard label="Ubicación" value={selectedTicket.metadata.location} />
-              <InfoCard label="Servicio" value={selectedTicket.metadata.service_type} />
-              <InfoCard label="Alcance" value={selectedTicket.metadata.scope} />
-              <InfoCard label="Fecha límite" value={selectedTicket.metadata.deadline} />
-              <InfoCard label="Presupuesto" value={selectedTicket.metadata.budget_range} />
-              <InfoCard
-                label="Valor estimado (USD)"
-                value={
-                  selectedTicket.metadata.annual_estimated_usd
-                    ? `$${selectedTicket.metadata.annual_estimated_usd.toLocaleString()}`
-                    : null
-                }
-              />
-              <InfoCard
-                label="Confianza del clasificador"
-                value={
-                  selectedTicket.metadata.classifier_confidence
-                    ? `${(selectedTicket.metadata.classifier_confidence * 100).toFixed(0)}%`
-                    : null
-                }
-              />
-            </div>
-          )}
-
-          {/* Readability Metrics */}
-          {selectedTicket.metadata &&
-            (selectedTicket.metadata.flesch_kincaid_grade != null ||
-              selectedTicket.metadata.gunning_fog != null) && (
-              <div className="mb-6">
-                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-                  Métricas de Legibilidad
-                </h3>
-                <div className="flex flex-wrap gap-3">
-                  {selectedTicket.metadata.flesch_kincaid_grade != null && (
-                    <MetricBadge
-                      label="Flesch-Kincaid"
-                      value={String(selectedTicket.metadata.flesch_kincaid_grade)}
-                    />
-                  )}
-                  {selectedTicket.metadata.gunning_fog != null && (
-                    <MetricBadge
-                      label="Gunning Fog"
-                      value={String(selectedTicket.metadata.gunning_fog)}
-                    />
-                  )}
-                  {selectedTicket.metadata.word_count != null && (
-                    <MetricBadge
-                      label="Palabras"
-                      value={String(selectedTicket.metadata.word_count)}
-                    />
-                  )}
-                  {selectedTicket.metadata.flesch_reading_ease != null && (
-                    <MetricBadge
-                      label="Flesch Reading Ease"
-                      value={String(selectedTicket.metadata.flesch_reading_ease)}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-          {/* Departments */}
-          {selectedTicket.department_sections.length > 0 && (
-            <div className="mb-6">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
-                Análisis por Departamento
-              </h3>
-              <div className="space-y-4">
-                {selectedTicket.department_sections.map((section) => (
-                  <div
-                    key={section.id ?? section.department_id}
-                    className="rounded-xl border border-slate-700 bg-slate-800/50 p-4"
-                  >
-                    <h4 className="mb-2 font-semibold text-orange-200">
-                      {DEPARTMENT_LABELS[section.department_id] ?? section.department_id}
-                    </h4>
-                    {section.key_aspects ? (
-                      <div className="prose prose-invert prose-sm max-w-none text-slate-300">
-                        <ReactMarkdown>
-                          {section.key_aspects}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <p className="text-sm italic text-slate-500">
-                        {selectedTicket.status === "analizando"
-                          ? "Analizando…"
-                          : "No disponible"}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Events */}
-          {selectedTicket.events.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-                Historial de Eventos
-              </h3>
-              <div className="space-y-1">
-                {selectedTicket.events.map((evt, i) => (
-                  <div key={i} className="flex items-start gap-3 text-sm">
-                    <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-orange-400" />
-                    <span className="font-mono text-xs text-slate-400">
-                      {evt.created_at
-                        ? new Date(evt.created_at).toLocaleTimeString("es-CO")
-                        : ""}
-                    </span>
-                    <span className="text-slate-200">{evt.event}</span>
-                    {evt.detail && (
-                      <span className="text-slate-400">— {evt.detail}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Show synthesis link if completed */}
-          {selectedTicket.status === "analisis_completo" && (
-            <div className="mt-6 rounded-xl border border-emerald-700/50 bg-emerald-950/30 p-4">
-              <p className="text-sm text-emerald-200">
-                ✅ Análisis completo. El ticket está listo para la Parte 2 (generación de borradores).
-              </p>
-              <p className="mt-1 text-xs text-emerald-300/70">
-                Handoff payload disponible en el detalle del ticket.
-              </p>
-            </div>
-          )}
-
-          {selectedTicket.status === "descartado" && (
-            <div className="mt-6 rounded-xl border border-slate-700 bg-slate-800/50 p-4">
-              <p className="text-sm text-slate-300">
-                ⛔ Documento descartado por el clasificador.
-              </p>
-              {selectedTicket.metadata?.classification_reason && (
-                <p className="mt-1 text-xs text-slate-400">
-                  Razón: {selectedTicket.metadata.classification_reason}
-                </p>
-              )}
-            </div>
-          )}
-        </section>
+        <RFPDetailPanel
+          ticketId={selectedTicket.ticket_id}
+          onBack={() => setSelectedTicket(null)}
+          onTicketChanged={fetchTickets}
+        />
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Small presentational components
-// ---------------------------------------------------------------------------
-
-function InfoCard({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className="mt-1 text-sm text-slate-100">{value ?? "—"}</p>
-    </div>
-  );
-}
-
-function MetricBadge({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-700/50 bg-cyan-950/30 px-3 py-1 text-xs font-medium text-cyan-200">
-      <span className="text-cyan-400">{label}:</span> {value}
-    </span>
-  );
-}
