@@ -47,6 +47,18 @@ APPROVAL_STATUS_APROBADO = "aprobado"
 APPROVAL_STATUS_RECHAZADO = "rechazado"
 APPROVAL_STATUS_REQUEST_CHANGES = "request_changes"
 
+# --- Aprobadores por departamento (Parte 3) ---
+DEPARTMENT_APPROVERS: dict[str, str] = {
+    "marketing": "Camila Ospina",
+    "operaciones": "Felipe Guerrero",
+    "procurement": "Lucía Fernández",
+    "training": "Jake Morrison",
+}
+
+CEO_NAME = "Mariana Restrepo"
+
+CEO_THRESHOLD_USD = 50000.0
+
 
 # ---------------------------------------------------------------------------
 # Tables
@@ -130,3 +142,103 @@ class RFPEventLog(SQLModel, table=True):
     event: str = Field(nullable=False)         # e.g. "pdf_received", "classified", "analysis_complete"
     detail: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=_utc_now, nullable=False)
+
+
+# --- Constantes de arbitraje (Parte 3) ---
+
+CONFLICT_TRIGGER_COST_VS_FEASIBILITY = "cost-vs-feasibility"
+CONFLICT_TRIGGER_SETUP_SLA_BREACH = "setup-sla-breach"
+CONFLICT_TRIGGER_CEO_THRESHOLD = "ceo-threshold"
+
+ARBITRATION_TRIGGER_IDS = {
+    CONFLICT_TRIGGER_COST_VS_FEASIBILITY,
+    CONFLICT_TRIGGER_SETUP_SLA_BREACH,
+    CONFLICT_TRIGGER_CEO_THRESHOLD,
+}
+
+# Árbitros fijos por trigger (no LLM)
+ARBITRATION_ARBITERS: dict[str, str] = {
+    CONFLICT_TRIGGER_COST_VS_FEASIBILITY: "Camila Ospina",       # Marketing, dueña del ticket
+    CONFLICT_TRIGGER_SETUP_SLA_BREACH: "Felipe Guerrero",        # Operaciones rechaza; Camila escala
+    CONFLICT_TRIGGER_CEO_THRESHOLD: "Mariana Restrepo",          # CEO
+}
+
+# Resoluciones posibles de arbitraje
+ARBITRATION_RESOLUTION_APPROVE = "approve"
+ARBITRATION_RESOLUTION_REJECT = "reject"
+ARBITRATION_RESOLUTION_REQUEST_CHANGES = "request_changes"
+
+VALID_ARBITRATION_RESOLUTIONS = {
+    ARBITRATION_RESOLUTION_APPROVE,
+    ARBITRATION_RESOLUTION_REJECT,
+    ARBITRATION_RESOLUTION_REQUEST_CHANGES,
+}
+
+# Límite de iteraciones del ciclo generador-evaluador
+MAX_GENERATOR_ITERATIONS = 3
+
+
+class RFPNodeExecution(SQLModel, table=True):
+    """Trazabilidad: registro de cada ejecución de un nodo del grafo."""
+
+    __tablename__ = "rfp_node_execution"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ticket_id: str = Field(foreign_key="rfp_ticket.ticket_id", nullable=False, index=True)
+    node_name: str = Field(nullable=False)       # e.g. "generate_drafts", "arbitration"
+    agent: str = Field(nullable=False)           # e.g. "generator:marketing", "arbiter:cost-vs-feasibility"
+    input_snapshot: Optional[str] = Field(default=None)   # JSON — input relevante para ese nodo
+    output_snapshot: Optional[str] = Field(default=None)  # JSON — output del nodo
+    department_id: Optional[str] = Field(default=None)    # Rama (None si es global)
+    created_at: datetime = Field(default_factory=_utc_now, nullable=False)
+
+
+class RFPCheckpoint(SQLModel, table=True):
+    """Checkpoint para reanudar ejecución después de una interrupción.
+
+    Namespaced por thread_id para permitir tickets concurrentes.
+    """
+
+    __tablename__ = "rfp_checkpoint"
+
+    id: int | None = Field(default=None, primary_key=True)
+    thread_id: str = Field(nullable=False, index=True)  # e.g. "rfp-{ticket_id}" o "rfp-{ticket_id}:{department}"
+    ticket_id: str = Field(foreign_key="rfp_ticket.ticket_id", nullable=False, index=True)
+    department_id: Optional[str] = Field(default=None)   # None si es global, o el department_id de la rama
+    node_name: str = Field(nullable=False)               # Node donde se guardó el checkpoint
+    state_snapshot: str = Field(nullable=False)          # JSON — estado completo del grafo en ese punto
+    is_resumed: bool = Field(default=False)              # True si ya fue reanudado
+    created_at: datetime = Field(default_factory=_utc_now, nullable=False)
+    resumed_at: Optional[datetime] = Field(default=None)
+
+
+class RFPFinalDocument(SQLModel, table=True):
+    """Documento final consolidado generado después de todas las aprobaciones."""
+
+    __tablename__ = "rfp_final_document"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ticket_id: str = Field(foreign_key="rfp_ticket.ticket_id", nullable=False, index=True)
+    content: str = Field(nullable=False)                 # Markdown del documento final
+    total_estimated_value_cop: Optional[float] = Field(default=None)
+    total_estimated_value_usd: Optional[float] = Field(default=None)
+    ceo_approval_required: bool = Field(default=False)
+    ceo_approved: bool = Field(default=False)
+    ceo_approved_at: Optional[datetime] = Field(default=None)
+    generated_at: datetime = Field(default_factory=_utc_now, nullable=False)
+
+
+class RFPArbitrationRecord(SQLModel, table=True):
+    """Registro de una decisión de arbitraje para un conflicto."""
+
+    __tablename__ = "rfp_arbitration_record"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ticket_id: str = Field(foreign_key="rfp_ticket.ticket_id", nullable=False, index=True)
+    trigger_id: str = Field(nullable=False)              # Uno de CONFLICT_TRIGGER_*
+    arbiter: str = Field(nullable=False)                 # Nombre del árbitro fijo
+    departments_involved: Optional[str] = Field(default=None)  # JSON list
+    description: str = Field(default="")
+    resolution: str = Field(nullable=False)              # approve | reject | request_changes
+    resolved_by: Optional[str] = Field(default=None)     # Humano que resolvió
+    resolved_at: datetime = Field(default_factory=_utc_now, nullable=False)
