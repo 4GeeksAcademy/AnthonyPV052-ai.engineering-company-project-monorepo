@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
-from typing import Any
+from typing import Any, Callable
 
 from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator
 
 from data.pipelines.rag import _context_text, _required_env, gateway_model_name, GEN_MODEL
+from generation_control import AbortSignal, GenerationAborted
+from partial_json import JsonAnswerStreamer
+
+logger = logging.getLogger("brasaland.memory.generation")
 
 
 class MemorySuggestion(BaseModel):
@@ -50,7 +55,25 @@ class GeneratedResponse(BaseModel):
 def generate_answer_with_memory(
     question: str, context: list[dict[str, Any]], memory_context: list[dict[str, Any]] | None = None,
     base_language: str = "es",
+    *,
+    on_token: Callable[[str], None] | None = None,
+    abort_signal: AbortSignal | None = None,
 ) -> tuple[str, MemorySuggestion]:
+    """Genera la respuesta del agente y, opcionalmente, la transmite por tokens.
+
+    El comportamiento por defecto no cambia: una llamada clásica de
+    petición/respuesta que devuelve ``(answer, MemorySuggestion)``.
+
+    Para el chat en vivo (Parte 2):
+
+    - ``on_token`` activa ``stream=True`` en el modelo. Los deltas del JSON se
+      pasan por ``AnswerFieldExtractor`` para reenviar solo el texto del campo
+      ``answer`` (nunca el JSON crudo ni las claves de la propuesta de memoria).
+    - ``abort_signal`` se consulta entre deltas: si el cliente interrumpe, se
+      deja de leer el stream del modelo, se cierra la respuesta y se lanza
+      ``GenerationAborted`` sin producir una respuesta final. Los tokens ya
+      entregados siguen siendo válidos para el cliente.
+    """
     memories = "\n".join(f"- {item['summary']}" for item in (memory_context or [])) or "[ninguna]"
     language_name = "English" if base_language == "en" else "espanol"
     context_text = _context_text(context) if context else "[SIN CONTEXTO RAG RECUPERADO]"
@@ -73,15 +96,70 @@ PREGUNTA:
 {question}
 """
     client = OpenAI(api_key=_required_env("LLM_API_KEY"), base_url=_required_env("LLM_GATEWAY"))
-    response = client.chat.completions.create(
-        model=gateway_model_name(os.getenv("GEN_MODEL", GEN_MODEL)),
-        messages=[{"role": "system", "content": "Devuelve exclusivamente JSON valido segun el esquema solicitado."},
-                  {"role": "user", "content": prompt}],
-        temperature=0,
-        response_format={"type": "json_object"},
+    request = {
+        "model": gateway_model_name(os.getenv("GEN_MODEL", GEN_MODEL)),
+        "messages": [{"role": "system", "content": "Devuelve exclusivamente JSON valido segun el esquema solicitado."},
+                     {"role": "user", "content": prompt}],
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+    content = (
+        _stream_json_content(client, request, on_token=on_token, abort_signal=abort_signal)
+        if on_token is not None
+        else _complete_json_content(client, request)
     )
-    content = response.choices[0].message.content
     if not content:
         raise RuntimeError("El modelo de generacion devolvio una respuesta vacia")
     parsed = GeneratedResponse.model_validate(json.loads(content))
     return parsed.answer.strip(), parsed.propuesta_memoria
+
+
+def _complete_json_content(client: OpenAI, request: dict[str, Any]) -> str | None:
+    """Ruta clásica (sin streaming): respuesta completa en una sola llamada."""
+    response = client.chat.completions.create(**request)
+    return response.choices[0].message.content
+
+
+def _stream_json_content(
+    client: OpenAI,
+    request: dict[str, Any],
+    *,
+    on_token: Callable[[str], None],
+    abort_signal: AbortSignal | None,
+) -> str:
+    """Lee el JSON del modelo como stream, emitiendo sólo el texto de ``answer``.
+
+    ``response.close()`` se ejecuta siempre: al terminar, al fallar y al
+    abortar. Así el proveedor deja de generar y no quedan conexiones ni tareas
+    colgadas cuando el encargado interrumpe a mitad de respuesta.
+    """
+    if abort_signal is not None:
+        abort_signal.raise_if_aborted()
+
+    streamer = JsonAnswerStreamer(on_token)
+    raw_parts: list[str] = []
+    response = client.chat.completions.create(**request, stream=True)
+    try:
+        for chunk in response:
+            if abort_signal is not None:
+                abort_signal.raise_if_aborted()
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            piece = getattr(getattr(choices[0], "delta", None), "content", None)
+            if not piece:
+                continue
+            raw_parts.append(piece)
+            streamer.push(piece)
+        if abort_signal is not None:
+            abort_signal.raise_if_aborted()
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # pragma: no cover - cierre best-effort
+                logger.debug("No se pudo cerrar el stream del modelo", exc_info=True)
+
+    # El modelo puede devolver espacios en blanco rodeando el JSON.
+    return "".join(raw_parts).strip()
