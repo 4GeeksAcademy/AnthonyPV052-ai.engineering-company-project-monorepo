@@ -9,3 +9,4 @@ agent-traces/
 data/raw
 *.db
 rfp-requests/
+snapshots/
