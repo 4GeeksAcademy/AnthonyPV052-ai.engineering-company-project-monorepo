@@ -50,6 +50,11 @@ from rfp_models import (
     DEPARTMENT_APPROVERS,
 )
 from security import get_current_user
+from sse_notifications import (
+    build_rfp_ticket_payload,
+    publish_rfp_ticket_created,
+    sse_rfp_tickets_stream,
+)
 
 logger = logging.getLogger("api.rfp")
 
@@ -59,10 +64,37 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
+
+# ---------------------------------------------------------------------------
+# GET /api/rfp/events/stream — Stream SSE de tickets de RFP nuevos
+# ---------------------------------------------------------------------------
+# Notificación en tiempo real (Parte 1 — Sistemas en Tiempo Real). Vive en
+# routes/rfp.py para heredar el mismo prefijo y la protección JWT del BackOffice
+# (router dependencies=[Depends(get_current_user)]). La lógica del stream está
+# en sse_notifications.py.
+router.add_api_route(
+    "/events/stream",
+    sse_rfp_tickets_stream,
+    methods=["GET"],
+    name="sse_rfp_tickets_stream",
+    include_in_schema=True,
+)
+
 # Where uploaded PDFs are stored
 # Inside container: /app/routes/rfp.py → /app/data/raw
 DATA_RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
-DATA_RAW_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    DATA_RAW_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # En local (monorepo fuera de Docker) el directorio data/ puede estar
+    # montado como sólo lectura por el usuario root. El módulo debe poder
+    # importarse igualmente; el upload fallará con un mensaje claro si el
+    # directorio no es grabable cuando realmente se necesite.
+    logger.warning(
+        "No se pudo crear el directorio %s (permisos). "
+        "El upload de PDFs requerirá permisos de escritura.",
+        DATA_RAW_DIR,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +121,10 @@ async def upload_rfp(
     """Upload a PDF RFP, create a ticket, and trigger background processing.
 
     Returns immediately with 202 + ticket_id. The pipeline runs async via Celery.
+
+    En el momento exacto en que el ticket entra con status="analizando" se
+    publica un evento SSE ``rfp_ticket_created`` para el dashboard en tiempo
+    real (Parte 1 — Sistemas en Tiempo Real).
     """
     # Validate file type
     if not file.filename or not file.filename.lower().endswith(".pdf"):
@@ -132,6 +168,19 @@ async def upload_rfp(
     )
     db.add(event)
     db.commit()
+
+    # Notificación en tiempo real: el ticket acaba de entrar con
+    # status="analizando". Se publica el evento SSE para el dashboard.
+    try:
+        publish_rfp_ticket_created(build_rfp_ticket_payload(ticket, None))
+        logger.info(
+            "SSE rfp_ticket_created published for %s (status=%s)",
+            ticket_id,
+            TICKET_STATUS_ANALIZANDO,
+        )
+    except Exception:
+        # La notificación en tiempo real nunca debe romper el upload.
+        logger.exception("Failed to publish SSE event for ticket %s", ticket_id)
 
     # Trigger background pipeline via Celery
     task_id = _trigger_pipeline(ticket_id, str(pdf_path))
