@@ -1,8 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
 import { getStoredToken, clearToken } from "@/lib/auth";
+import {
+  useRfpSse,
+  type RfpTicketCreatedEvent,
+  type RfpNotificationItem,
+} from "@/lib/sseRfp";
 import RFPDetailPanel from "./RFPDetailPanel";
 
 /* Usamos /api para que Next.js rewrites (next.config.ts) enruten al backend.
@@ -137,16 +147,150 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-function StatusBadge({ status }: { status: TicketStatus }) {
+function StatusBadge({ status }: { status: TicketStatus | string }) {
+  const label = STATUS_LABELS[status as TicketStatus] ?? status;
+  const tone = STATUS_TONES[status as TicketStatus] ?? "bg-slate-300/10 text-slate-200 border-slate-400/40";
   return (
     <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_TONES[status]}`}
+      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${tone}`}
     >
-      {STATUS_LABELS[status]}
+      {label}
     </span>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Real-time (SSE) helpers
+// ---------------------------------------------------------------------------
+
+function formatRfpTimestamp(epochMs: number): string {
+  return new Date(epochMs).toLocaleString("es-CO");
+}
+
+function ConnectionStateBadge({
+  state,
+  reconnectAttempts,
+}: {
+  state: "connecting" | "connected" | "reconnecting" | "closed";
+  reconnectAttempts: number;
+}) {
+  const base =
+    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold";
+  if (state === "connected") {
+    return (
+      <span className={`${base} border-emerald-300/40 bg-emerald-300/10 text-emerald-100`}>
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+        </span>
+        En vivo
+      </span>
+    );
+  }
+  if (state === "reconnecting") {
+    return (
+      <span className={`${base} border-amber-300/40 bg-amber-300/10 text-amber-100`}>
+        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        Reconectando{reconnectAttempts > 0 ? ` (intento ${reconnectAttempts})` : ""}
+      </span>
+    );
+  }
+  if (state === "connecting") {
+    return (
+      <span className={`${base} border-slate-500/40 bg-slate-500/10 text-slate-200`}>
+        Conectando…
+      </span>
+    );
+  }
+  return (
+    <span className={`${base} border-rose-300/40 bg-rose-300/10 text-rose-100`}>
+      Sin conexión en tiempo real
+    </span>
+  );
+}
+
+function RealTimeNotificationBanner({
+  notifications,
+  onViewTicket,
+  onDismiss,
+  onRestart,
+}: {
+  notifications: RfpNotificationItem[];
+  onViewTicket: (ticketId: string) => void;
+  onDismiss: () => void;
+  onRestart: () => void;
+}) {
+  if (notifications.length === 0) return null;
+
+  const total = notifications.length;
+  return (
+    <section className="rounded-2xl border border-amber-300/30 bg-gradient-to-br from-amber-950/60 via-slate-900 to-slate-900 p-5 shadow-lg shadow-amber-950/30">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-amber-400"
+            aria-hidden="true"
+          />
+          <h2 className="text-sm font-bold uppercase tracking-[0.14em] text-amber-200">
+            Llegada de RFP en tiempo real
+          </h2>
+          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-xs font-bold text-amber-100">
+            {total} {total === 1 ? "nuevo" : "nuevos"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-md border border-slate-600 bg-slate-800/70 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+          >
+            Descartar avisos
+          </button>
+          <button
+            type="button"
+            onClick={onRestart}
+            className="rounded-md border border-slate-600 bg-slate-800/70 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+          >
+            Reconectar
+          </button>
+        </div>
+      </div>
+
+      <ul className="space-y-2">
+        {notifications.map((n) => (
+          <li
+            key={n.ticket_id}
+            className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-amber-300/20 bg-slate-900/70 px-4 py-3"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-amber-50">
+                {n.client_name ?? "Cliente sin identificar"}
+              </p>
+              <p className="text-xs text-slate-400">
+                {n.service_type ?? "Servicio sin clasificar"} ·{" "}
+                {formatRfpTimestamp(n.received_at)}
+              </p>
+            </div>
+            <span className="font-mono text-xs text-slate-400">
+              {n.ticket_id.slice(0, 8)}…
+            </span>
+            <StatusBadge status={n.status} />
+            <button
+              type="button"
+              onClick={() => onViewTicket(n.ticket_id)}
+              className="rounded-md bg-amber-500 px-3 py-1 text-xs font-semibold text-slate-950 transition hover:bg-amber-400"
+            >
+              Ver detalle
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
@@ -160,11 +304,18 @@ export default function RFPPage() {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Cache de ticket ids ya presentes en la lista → la UI no pinta un ticket
+  // dos veces si el servidor re-emite un evento (replay tras reconexión).
+  const knownTicketIds = useRef<Set<string>>(new Set());
+
   // Fetch ticket list
   const fetchTickets = useCallback(async () => {
     try {
       const data = await apiFetch<TicketListItem[]>("/api/rfp/tickets");
       setTickets(data);
+      // Mantén el cache de ids en sync con la lista para la dedup SSE.
+      const ids = new Set<string>(data.map((t) => t.ticket_id));
+      knownTicketIds.current = ids;
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Error al cargar tickets");
@@ -172,6 +323,30 @@ export default function RFPPage() {
       setLoading(false);
     }
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Real-time: consume GET /api/rfp/events/stream vía fetch + ReadableStream.
+  // La reconexión con backoff reedita el refetch de la lista como red de
+  // seguridad; el servidor re-emite los tickets perdidos con Last-Event-ID.
+  // ---------------------------------------------------------------------------
+  const {
+    connectionState,
+    reconnectAttempts,
+    notifications,
+    clearNotifications,
+    restart,
+  } = useRfpSse({
+    knownTicketIds,
+    onReconnected: () => {
+      void fetchTickets();
+    },
+    onNewTicket: (_event: RfpTicketCreatedEvent) => {
+      // Un ticket llegó en tiempo real (p.ej. subido desde otro navegador).
+      // Refresca la lista para que la fila aparezca sin recargar la página
+      // (el banner lo gestiona el hook, aquí aseguramos la tabla).
+      void fetchTickets();
+    },
+  });
 
   useEffect(() => {
     fetchTickets();
@@ -290,8 +465,25 @@ export default function RFPPage() {
             Sube una RFP en PDF para que el sistema la clasifique, extraiga metadatos
             y la distribuya a los departamentos correspondientes para su análisis.
           </p>
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <ConnectionStateBadge
+              state={connectionState}
+              reconnectAttempts={reconnectAttempts}
+            />
+            <span className="text-xs text-slate-300">
+              Los nuevos tickets aparecen en tiempo real, sin recargar la página.
+            </span>
+          </div>
         </div>
       </section>
+
+      {/* Real-time notifications (SSE) */}
+      <RealTimeNotificationBanner
+        notifications={notifications}
+        onViewTicket={(id) => void onViewTicket(id)}
+        onDismiss={clearNotifications}
+        onRestart={restart}
+      />
 
       {/* Upload Form */}
       <section className="rounded-2xl border border-orange-300/25 bg-slate-900 p-6">
