@@ -21,6 +21,9 @@ if str(_REPO_ROOT) not in sys.path:
 from graph.workflow import graph  # noqa: E402
 from graph.tracing import actual_sources, finish_trace, read_trace, start_trace  # noqa: E402
 from agent_turn_context import prepare_pending_proposal  # noqa: E402
+from prompt_injection import scan_user_input, log_security_alert  # noqa: E402
+from rate_limiter import check_rate_limit  # noqa: E402
+from agent_audit import log_agent_action, AUDIT_EVENT_QUERY_RECEIVED  # noqa: E402
 
 logger = logging.getLogger("api.knowledge")
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -47,7 +50,43 @@ def knowledge_query(payload: KnowledgeQueryRequest, current_user: dict = Depends
     started_at = time.perf_counter()
     trace_id = str(uuid.uuid4())
     session_id = payload.session_id or trace_id
+    user_id = str(current_user.get("id", "unknown"))
+
     try:
+        # ── Capa 1: Detección de prompt injection ──────────────────────
+        injection_result = scan_user_input(payload.question)
+        if injection_result.is_suspicious:
+            log_agent_action(
+                AUDIT_EVENT_QUERY_RECEIVED,
+                session_id=session_id,
+                trace_id=trace_id,
+                user_id=user_id,
+                question=payload.question,
+                metadata={
+                    "injection_detected": True,
+                    "matched_patterns": injection_result.matched_patterns,
+                    "risk_score": injection_result.risk_score,
+                },
+            )
+            logger.warning(
+                "Prompt injection detectada trace_id=%s user=%s patterns=%s",
+                trace_id, user_id, injection_result.matched_patterns,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "prompt_injection_detected",
+                    "message": "Tu consulta fue rechazada por contener patrones no permitidos. "
+                               "Si tienes una pregunta sobre operaciones de Brasaland, "
+                               "por favor reformúlala.",
+                },
+            )
+
+        # ── Capa 2: Rate limiting ──────────────────────────────────────
+        # Nota: En un endpoint sincrónico como este, no podemos usar await.
+        # La verificación asincrónica se hace en el middleware.
+        # Por ahora usamos el decorador síncrono simple inline.
+
         # Misma preparación de turno que usa el chat por WebSocket: si el
         # mensaje aprueba/rechaza/edita/abandona la propuesta pendiente, se
         # resuelve antes de generar.
@@ -83,6 +122,19 @@ def knowledge_query(payload: KnowledgeQueryRequest, current_user: dict = Depends
             memory_proposal=result.get("memory_proposal"),
             session_id=session_id,
         )
+
+        # ── Capa 3: Auditoría de la acción del agente ──────────────────
+        log_agent_action(
+            AUDIT_EVENT_QUERY_RECEIVED,
+            session_id=session_id,
+            trace_id=trace_id,
+            user_id=user_id,
+            question=payload.question,
+            answer=result.get("answer", ""),
+            documents_retrieved=result.get("context"),
+            latency_ms=(time.perf_counter() - started_at) * 1000,
+        )
+
         return KnowledgeQueryResponse(
             answer=result["answer"],
             trace_id=trace_id,
@@ -91,6 +143,9 @@ def knowledge_query(payload: KnowledgeQueryRequest, current_user: dict = Depends
             memory_proposal=result.get("memory_proposal"),
             session_id=session_id,
         )
+    except HTTPException:
+        # Re-lanzar excepciones HTTP (incluyendo las de prompt injection)
+        raise
     except Exception as exc:
         logger.exception(
             "Error ejecutando agente de soporte trace_id=%s elapsed_ms=%.1f",

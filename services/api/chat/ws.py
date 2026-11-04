@@ -39,6 +39,8 @@ from chat import events
 from chat.generation import manager
 from chat.pubsub import hub
 from chat.sessions import ensure_session, store
+from prompt_injection import scan_user_input
+from agent_audit import log_agent_action, log_security_alert, AUDIT_EVENT_QUERY_RECEIVED
 
 logger = logging.getLogger("api.chat.ws")
 
@@ -182,6 +184,34 @@ async def chat_websocket(websocket: WebSocket) -> None:
                         )
                     )
                     continue
+
+                # ── Prompt injection detection ────────────────────────
+                injection_result = scan_user_input(text)
+                if injection_result.is_suspicious:
+                    log_security_alert(
+                        "prompt_injection_ws",
+                        session_id=session_id,
+                        user_id=user_id,
+                        details={
+                            "matched_patterns": injection_result.matched_patterns,
+                            "risk_score": injection_result.risk_score,
+                            "text_preview": text[:200],
+                        },
+                    )
+                    await websocket.send_text(
+                        events.encode_event(
+                            events.CHAT_EVENT_ERROR,
+                            events.error_payload(
+                                session_id=session_id,
+                                message="Tu mensaje fue rechazado por seguridad. "
+                                        "Si tienes una pregunta sobre operaciones "
+                                        "de Brasaland, por favor reformúlala.",
+                                code="prompt_injection",
+                            ),
+                        )
+                    )
+                    continue
+
                 await manager.start_turn(
                     session_id,
                     text,

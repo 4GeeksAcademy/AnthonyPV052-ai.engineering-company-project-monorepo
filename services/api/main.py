@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -38,6 +38,10 @@ from telemetry_util import emit_api_perf_event, emit_api_error_event, emit_telem
 from celery.result import AsyncResult
 from celery_app import celery_app
 from starlette.middleware.base import BaseHTTPMiddleware
+
+# --- Seguridad: rate limiting y auditoría ---
+from rate_limiter import check_rate_limit, DEFAULT_RATE_LIMITS
+from agent_audit import log_security_alert
 
 logger = logging.getLogger("api.timing")
 
@@ -205,6 +209,65 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# ── Rate limiting middleware ─────────────────────────────────────────
+# Aplica límites de tasa sobre endpoints que disparan llamadas a modelos
+# de lenguaje, para evitar loops de costo descontrolado (OWASP LLM07).
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Limita la tasa de solicitudes a endpoints de IA.
+
+    Los límites por defecto están en ``rate_limiter.DEFAULT_RATE_LIMITS``.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        method = request.method
+
+        # Solo limitamos endpoints que disparan LLM
+        if method == "POST":
+            if path == "/knowledge/query":
+                await self._check(request, "knowledge_query")
+            elif path.startswith("/api/rfp/upload"):
+                await self._check(request, "rfp_upload")
+            elif path.startswith("/api/rfp/") and path.endswith("/generate"):
+                await self._check(request, "rfp_generate")
+
+        response = await call_next(request)
+        return response
+
+    async def _check(self, request: Request, endpoint_type: str) -> None:
+        """Verifica el rate limit y rechaza si se excede."""
+        user = getattr(request.state, "user", None)
+        if user and hasattr(user, "get"):
+            uid = user.get("id", "anonymous")
+            key = f"user:{uid}"
+        else:
+            key = f"ip:{request.client.host if request.client else 'unknown'}"
+
+        allowed, count, limit = await check_rate_limit(key, endpoint_type=endpoint_type)
+        if not allowed:
+            log_security_alert(
+                "rate_limit_exceeded",
+                user_id=uid if user else None,
+                details={
+                    "endpoint": endpoint_type,
+                    "count": count,
+                    "limit": limit,
+                    "path": str(request.url.path),
+                },
+            )
+            from fastapi.responses import JSONResponse as FastJSONResponse
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "rate_limit_exceeded",
+                    "message": f"Has excedido el límite de {limit} solicitudes. Intenta de nuevo en un momento.",
+                },
+            )
+
+
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 
