@@ -6,9 +6,11 @@ import sys
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal
+
+from security import get_current_user
 
 # La API y el grafo se ejecutan juntos en services/api (localmente) y se
 # copian juntos a /app en la imagen de Docker.
@@ -25,7 +27,7 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 
 class KnowledgeQueryRequest(BaseModel):
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=2000)
     session_id: str | None = Field(default=None, min_length=1, max_length=256)
     base_language: Literal["es", "en"] = "es"
 
@@ -40,7 +42,7 @@ class KnowledgeQueryResponse(BaseModel):
 
 
 @router.post("/query", response_model=KnowledgeQueryResponse)
-def knowledge_query(payload: KnowledgeQueryRequest) -> KnowledgeQueryResponse:
+def knowledge_query(payload: KnowledgeQueryRequest, current_user: dict = Depends(get_current_user)) -> KnowledgeQueryResponse:
     """Devuelve respuesta, fuentes utilizadas y el orden de ejecución del agente."""
     started_at = time.perf_counter()
     trace_id = str(uuid.uuid4())
