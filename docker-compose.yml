@@ -134,6 +134,27 @@ services:
       - backend
     command: ["npm", "run", "dev", "--", "-p", "3000"]
 
+  mcp-brasaland:
+    # Use the same default bridge so host.docker.internal works consistently.
+    network_mode: bridge
+    build:
+      context: .
+      dockerfile: mcps/brasaland/Dockerfile
+    container_name: brasaland-mcp
+    ports:
+      - "8100:8100"
+    environment:
+      - MCP_BRASALAND_HOST=0.0.0.0
+      - MCP_BRASALAND_PORT=8100
+      - MCP_BRASALAND_API_BASE_URL=http://host.docker.internal:8020
+      - MCP_BRASALAND_USE_FALLBACK_AUTH=true
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+
 networks:
   brasaland-net:
     name: brasaland-net

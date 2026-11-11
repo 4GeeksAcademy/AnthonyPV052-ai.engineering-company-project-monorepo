@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from graph.incident_tool import extract_incident_id
+from graph.incident_tool_adapter import extract_incident_id
 from graph.state import AgentState
 
 _INCIDENT_INTENT = re.compile(
