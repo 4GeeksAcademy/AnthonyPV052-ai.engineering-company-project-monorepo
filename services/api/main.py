@@ -285,6 +285,10 @@ app.include_router(report_router)
 app.include_router(reporting_router)
 app.include_router(memory_router)
 
+# --- Guardrails (observabilidad y seguridad) ---
+from routes.guardrails import router as guardrails_router
+app.include_router(guardrails_router)
+
 
 @app.get("/tasks/{task_id}")
 def get_task_status(task_id: str, current_user: dict = Depends(get_current_user)) -> dict[str, object]:
