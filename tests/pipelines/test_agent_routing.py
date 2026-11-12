@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -10,8 +11,8 @@ for path in (ROOT, API_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from graph.routing import route_sources  # noqa: E402
-from graph.incident_tool import IncidentToolInput, IncidentToolOutput  # noqa: E402
+from graph.routing import route_sources, route_context  # noqa: E402
+from graph.incident_tool_adapter import IncidentToolInput, IncidentToolOutput  # noqa: E402
 from graph.nodes import generate_node, no_context_node, retrieve_node  # noqa: E402
 
 
@@ -31,6 +32,145 @@ def test_knowledge_question_routes_to_rag_without_incident_tool() -> None:
     route = route_sources(_state("¿Qué alérgenos tiene la Ensalada Tropical?"))
 
     assert route == "rag_only"
+
+
+def test_memory_recall_question_routes_to_generation_without_rag_context() -> None:
+    state = {
+        "question": "¿Recuerdas algo sobre el gerente de Medellín?",
+        "context": [],
+        "route": "rag_only",
+    }
+
+    assert route_context(state) == "generate"
+
+
+def test_explicit_remember_request_routes_to_generation_without_rag_context() -> None:
+    state = {
+        "question": "Recuerda esto: Dejamos de ofrecer La Ensalada Tropical en la sede de Medellín.",
+        "context": [],
+        "route": "rag_only",
+    }
+
+    assert route_context(state) == "generate"
+
+
+def test_non_recall_question_without_context_keeps_no_context_route() -> None:
+    state = {"question": "¿Cuál es el clima hoy?", "context": [], "route": "rag_only"}
+
+    assert route_context(state) == "no_context"
+
+
+def test_memory_recall_passes_only_search_results_to_answer_generator(monkeypatch) -> None:
+    from types import SimpleNamespace
+    import graph.nodes as nodes
+    from memory.generation import MemorySuggestion
+
+    approved_memory = SimpleNamespace(
+        summary="El gerente de Medellín prefiere reportes de incidencias por WhatsApp.",
+        location="Medellín",
+        category="preferencias",
+    )
+    captured = {}
+
+    search_call = {}
+
+    def fake_search(*args, **kwargs):
+        search_call.update(kwargs)
+        return [approved_memory]
+
+    monkeypatch.setattr(nodes, "search_memories", fake_search)
+
+    def fake_generate(question, context, memory_context=None, base_language="es"):
+        captured["memory_context"] = memory_context
+        return "La preferencia guardada es WhatsApp.", MemorySuggestion()
+
+    monkeypatch.setattr(nodes, "generate_answer_with_memory", fake_generate)
+    state = {
+        "question": "¿Recuerdas algo sobre el gerente de Medellín?",
+        "context": [],
+        "answer": "",
+        "trace_id": "test-memory-recall",
+        "route": "rag_only",
+    }
+
+    update = generate_node(state)
+
+    assert update["answer"] == "La preferencia guardada es WhatsApp."
+    assert captured["memory_context"] == [{
+        "summary": approved_memory.summary,
+        "location": "Medellín",
+        "category": "preferencias",
+    }]
+    assert search_call["threshold"] == 0.60
+
+
+def test_memory_recall_without_matches_does_not_invoke_generator(monkeypatch) -> None:
+    import graph.nodes as nodes
+
+    monkeypatch.setattr(nodes, "search_memories", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        nodes, "generate_answer_with_memory",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("generator should not run")),
+    )
+    state = {
+        "question": "¿Recuerdas algo sobre el gerente de Medellín?",
+        "context": [],
+        "answer": "",
+        "trace_id": "test-memory-recall-empty",
+        "route": "rag_only",
+    }
+
+    update = generate_node(state)
+
+    assert "ni memorias aprobadas" in update["answer"]
+
+
+def test_explicit_remember_request_generates_and_creates_proposal(monkeypatch) -> None:
+    from types import SimpleNamespace
+    import graph.nodes as nodes
+    from memory.generation import MemorySuggestion
+
+    monkeypatch.setattr(nodes, "search_memories", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        nodes,
+        "generate_answer_with_memory",
+        lambda *args, **kwargs: (
+            "Entendido, propongo guardar el cambio.",
+            MemorySuggestion(
+                should_store=True,
+                summary="La Ensalada Tropical dejó de ofrecerse en la sede de Medellín.",
+                location="Medellín",
+                category="general",
+                confidence=0.9,
+            ),
+        ),
+    )
+    created = {}
+
+    def fake_create_proposal(**kwargs):
+        created.update(kwargs)
+        return SimpleNamespace(
+            id="proposal-1",
+            proposed_summary=kwargs["summary"],
+        )
+
+    monkeypatch.setattr(nodes, "create_proposal", fake_create_proposal)
+    state = {
+        "question": "Recuerda esto: Dejamos de ofrecer La Ensalada Tropical en la sede de Medellín.",
+        "context": [],
+        "answer": "",
+        "trace_id": "test-explicit-memory-request",
+        "session_id": "test-session",
+        "route": "rag_only",
+        "base_language": "es",
+    }
+
+    update = generate_node(state)
+
+    assert update["memory_proposal"]["status"] == "pending"
+    assert update["memory_proposal"]["summary"] == created["summary"]
+    assert created["location"] == "Medellín"
+    assert "Responde sí para guardarlo" in update["answer"]
 
 
 def test_request_for_ticket_and_procedure_routes_tool_then_rag() -> None:
@@ -61,13 +201,13 @@ def test_incident_tool_input_output_contract() -> None:
     assert result.outcome == "not_found"
 
 
-def test_incident_transport_is_get_and_passes_configured_bearer(monkeypatch) -> None:
-    from contextlib import nullcontext
-    from graph import incident_tool
+def test_incident_transport_uses_mcp_adapter(monkeypatch) -> None:
+    """Verify the adapter calls the MCP tool via langchain-mcp-adapters."""
+    from graph import incident_tool_adapter
     from incident_models import IncidentResponse
 
-    captured = {}
-    payload = IncidentResponse(
+    called_with = {}
+    expected_incident = IncidentResponse(
         id="ABC-123",
         title="Broken oven",
         description="Oven is not heating",
@@ -75,19 +215,31 @@ def test_incident_transport_is_get_and_passes_configured_bearer(monkeypatch) -> 
         status="open",
         origin="branch",
         branch="central",
-    ).model_dump_json().encode()
+    )
 
-    def fake_urlopen(request, timeout):
-        captured["request"] = request
-        captured["timeout"] = timeout
-        return nullcontext(type("Response", (), {"read": lambda self: payload})())
+    async def fake_async_call(tool_name, arguments):
+        called_with["tool_name"] = tool_name
+        called_with["arguments"] = arguments
+        return json.loads(expected_incident.model_dump_json())
 
-    monkeypatch.setenv("INCIDENTS_API_TOKEN", "test-service-token")
-    monkeypatch.setattr(incident_tool, "urlopen", fake_urlopen)
-    assert incident_tool._fetch_incident("ABC-123").id == "ABC-123"
-    assert captured["request"].method == "GET"
-    assert captured["request"].get_header("Authorization") == "Bearer test-service-token"
-    assert captured["timeout"] == 7.0
+    monkeypatch.setattr(
+        incident_tool_adapter, "_async_call_mcp_tool", fake_async_call
+    )
+    monkeypatch.setenv("BRASALAND_MCP_SERVER_URL", "http://localhost:8100/mcp")
+
+    result = incident_tool_adapter.lookup_incident(
+        IncidentToolInput(ticket_id="ABC-123")
+    )
+    assert result.outcome == "found"
+    assert result.incident is not None
+    assert result.incident.id == "ABC-123"
+    assert called_with["tool_name"] == "incidents_get"
+    assert called_with["arguments"] == {"incident_id": "ABC-123"}
+
+    # Also test list_incidents
+    incident_tool_adapter.list_incidents({"status": "open"})
+    assert called_with["tool_name"] == "incidents_list"
+    assert "status" in called_with["arguments"]
 
 
 def test_trace_sources_exclude_skipped_rag_and_preserve_execution_order() -> None:
@@ -105,23 +257,26 @@ def test_trace_sources_exclude_skipped_rag_and_preserve_execution_order() -> Non
 
 
 def test_missing_incident_is_reported_as_not_found(monkeypatch) -> None:
-    from graph import incident_tool
+    from graph import incident_tool_adapter
 
-    monkeypatch.setattr(incident_tool, "_fetch_incident", lambda incident_id: None)
-    result = incident_tool.lookup_incident(IncidentToolInput(ticket_id="ABC-404"))
+    async def fake_not_found(tool_name, arguments):
+        return {"error": "not_found", "code": "not_found", "message": "Not found", "http_status": 404}
+
+    monkeypatch.setattr(incident_tool_adapter, "_async_call_mcp_tool", fake_not_found)
+    result = incident_tool_adapter.lookup_incident(IncidentToolInput(ticket_id="ABC-404"))
     assert result.outcome == "not_found"
     assert result.incident is None
     assert result.error is None
 
 
 def test_incident_service_failure_returns_typed_fallback(monkeypatch) -> None:
-    from graph import incident_tool
+    from graph import incident_tool_adapter
 
-    def fail(incident_id):
+    async def fake_service_error(tool_name, arguments):
         raise ConnectionError("private infrastructure detail")
 
-    monkeypatch.setattr(incident_tool, "_fetch_incident", fail)
-    result = incident_tool.lookup_incident(IncidentToolInput(ticket_id="ABC-500"))
+    monkeypatch.setattr(incident_tool_adapter, "_async_call_mcp_tool", fake_service_error)
+    result = incident_tool_adapter.lookup_incident(IncidentToolInput(ticket_id="ABC-500"))
     assert result.outcome == "service_error"
     assert result.incident is None
     assert result.error == "service_error"
@@ -155,7 +310,7 @@ def test_mixed_request_keeps_confirmed_incident_if_rag_fails(monkeypatch) -> Non
     def fail_generation(*args, **kwargs):
         raise ConnectionError("gateway DNS is unavailable")
 
-    monkeypatch.setattr(nodes, "generate_answer", fail_generation)
+    monkeypatch.setattr(nodes, "generate_answer_with_memory", fail_generation)
     state = {
         "question": "estado del ticket ABC-123 y procedimiento de resolución",
         "context": [],

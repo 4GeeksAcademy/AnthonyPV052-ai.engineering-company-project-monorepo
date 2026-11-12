@@ -36,6 +36,8 @@ def finish_trace(
     *,
     sources: list[str] | None = None,
     execution_order: list[str] | None = None,
+    memory_proposal: dict[str, object] | None = None,
+    session_id: str | None = None,
 ) -> None:
     event: dict[str, Any] = {
         "trace_id": trace_id,
@@ -47,6 +49,10 @@ def finish_trace(
         event["sources"] = sources
     if execution_order is not None:
         event["execution_order"] = execution_order
+    if memory_proposal is not None:
+        event["memory_proposal"] = memory_proposal
+    if session_id is not None:
+        event["session_id"] = session_id
     _write(trace_id, event)
 
 

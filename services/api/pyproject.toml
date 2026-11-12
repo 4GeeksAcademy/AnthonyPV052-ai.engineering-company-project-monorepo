@@ -23,6 +23,10 @@ dependencies = [
   "fastembed>=0.8.0",
   "openai>=3.16.2",
   "langgraph>=1.2.12",
+  "langchain-mcp-adapters>=0.1.0",
+  "markitdown>=0.1.9",
+  "py-readability-metrics>=1.4.5",
+  "pypdf>=6.21.4",
 ]
 
 [project.scripts]
@@ -50,4 +54,9 @@ include = [
   "routes/*.py",
   "telemetry_util.py",
   "telemetry/*.py",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
 ]

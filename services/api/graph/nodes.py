@@ -4,7 +4,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
 from graph.state import AgentState
 from graph.tracing import record_node
-from graph.incident_tool import (
+# ── MCP-based incident tool (uses langchain-mcp-adapters) ───────────
+from graph.incident_tool_adapter import (
     IncidentToolInput,
     extract_incident_filters,
     extract_incident_id,
@@ -12,12 +13,28 @@ from graph.incident_tool import (
     lookup_incident,
     _INCIDENT_LIST_LIMIT,
 )
-from graph.routing import route_sources
+from graph.routing import (
+    route_sources,
+    _EXPLICIT_MEMORY_INTENT,
+    _MEMORY_RECALL_INTENT,
+)
 
 from data.pipelines.rag import (
     retrieve,
     generate_answer,
     DEFAULT_MIN_SCORE,
+)
+from generation_control import GenerationAborted
+from graph.streaming import (
+    emit_answer_final,
+    emit_text_chunks,
+    emit_token,
+    turn_controls,
+)
+from memory.generation import generate_answer_with_memory
+from memory.store import (
+    create_proposal,
+    search_memories,
 )
 
 logger = logging.getLogger("api.agent")
@@ -157,6 +174,19 @@ def _format_incident_list(incidents: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
+def _emit_deterministic(answer: str) -> None:
+    """Emite una respuesta ya calculada como stream de tokens.
+
+    Sólo cuando el turno pidió streaming (canal WebSocket). En la ruta HTTP
+    tradicional con ``invoke()`` el writer es un no-op, así que el contrato
+    petición/respuesta no cambia.
+    """
+    _, streaming = turn_controls()
+    if streaming and answer:
+        emit_text_chunks(answer)
+        emit_answer_final(answer)
+
+
 def incident_answer_node(state: AgentState) -> dict[str, object]:
     # Si es un listado (sin ID explícito)
     incidents = state.get("incidents")
@@ -175,6 +205,7 @@ def incident_answer_node(state: AgentState) -> dict[str, object]:
         else:
             answer_parts.append("No encontré incidencias con esos criterios.")
         answer = "".join(answer_parts)
+        _emit_deterministic(answer)
         output = {"answer": answer}
         record_node(state, "incident_answer", output)
         return output
@@ -195,12 +226,39 @@ def incident_answer_node(state: AgentState) -> dict[str, object]:
             answer += f" Última actualización: {incident['updated_at']}."
         if state.get("route") == "incident_then_rag" and state.get("retrieval_error"):
             answer += " No pude consultar la documentación complementaria ahora mismo."
+    _emit_deterministic(answer)
     output = {"answer": answer}
     record_node(state, "incident_answer", output)
     return output
 
 
 def generate_node(state: AgentState) -> dict[str, object]:
+    memory_recall = bool(_MEMORY_RECALL_INTENT.search(state["question"]))
+    explicit_memory_request = bool(_EXPLICIT_MEMORY_INTENT.search(state["question"]))
+    if (not state.get("context") and not state.get("incident") and not state.get("incidents")
+            and not memory_recall and not explicit_memory_request):
+        # A proposal decision may be bundled with an ordinary question. Keep
+        # the normal no-context answer for that question, but report the
+        # proposal outcome rather than silently dropping it.
+        outcome = state.get("memory_proposal")
+        answer = "No encontré información suficiente en la base de conocimiento de Brasaland."
+        if outcome:
+            status = outcome.get("status")
+            if status == "approved":
+                answer = "La memoria propuesta quedó guardada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "rejected":
+                answer = "La propuesta de memoria fue descartada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "edited":
+                answer = "La propuesta editada quedó guardada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "discarded":
+                answer = "La propuesta anterior fue descartada. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+            elif status == "pending":
+                answer = "La propuesta sigue pendiente de una respuesta clara. No encontré información suficiente para la pregunta adicional en la base de conocimiento de Brasaland."
+        _emit_deterministic(answer)
+        output = {"answer": answer, "memory_proposal": outcome}
+        record_node(state, "generate", output)
+        return output
+
     if state.get("retrieval_error"):
         if state.get("incident") and state["incident"].get("status"):
             incident = state["incident"]
@@ -211,6 +269,7 @@ def generate_node(state: AgentState) -> dict[str, object]:
             )
         else:
             answer = "No pude consultar el servicio de conocimiento ahora mismo. Inténtalo de nuevo más tarde."
+        _emit_deterministic(answer)
         output = {"answer": answer}
         record_node(state, "generate", output)
         return output
@@ -218,11 +277,32 @@ def generate_node(state: AgentState) -> dict[str, object]:
     if state.get("incident_error") and not state.get("incidents"):
         # Mixed request, but a failed live lookup: do not let the model infer a
         # current status from RAG or from its prior knowledge.
-        output = {"answer": "No pude confirmar el estado de ese ticket ahora mismo."}
+        answer = "No pude confirmar el estado de ese ticket ahora mismo."
+        _emit_deterministic(answer)
+        output = {"answer": answer}
         record_node(state, "generate", output)
         return output
 
     context = list(state["context"])
+    session_id = state.get("session_id", state["trace_id"])
+    try:
+        # Broad recall phrasing may omit the topic itself (e.g. "¿Recuerdas
+        # algo sobre el gerente de Medellín?"). Use a lower, still positive
+        # threshold only for explicit recall; normal queries retain 0.85.
+        search_options = {"location_filter": None}
+        if memory_recall:
+            search_options["threshold"] = 0.60
+        memories = search_memories(state["question"], **search_options)
+    except Exception:
+        logger.exception("No se pudo recuperar la memoria episódica (BD no disponible)")
+        memories = []
+
+    if memory_recall and not state.get("context") and not memories:
+        answer = "No encontré información suficiente en la base de conocimiento ni memorias aprobadas relacionadas."
+        _emit_deterministic(answer)
+        output = {"answer": answer}
+        record_node(state, "generate", output)
+        return output
 
     # Para consultas mixtas: añadir la lista de incidencias al contexto del RAG
     incidents = state.get("incidents")
@@ -254,17 +334,27 @@ def generate_node(state: AgentState) -> dict[str, object]:
     if incident:
         context.append({
             "source_document": "GET /api/incidents/{id}",
-            "section": "Estado actualizado de incidencia",
             "text": "\n".join(
                 f"{key}: {value}" for key, value in incident.items()
                 if key in {"id", "title", "description", "status", "category", "origin", "branch", "created_at", "updated_at"}
             ),
         })
+    abort_signal, streaming = turn_controls()
     try:
-        answer = generate_answer(
-            state["question"],
-            context,
+        # En el chat en vivo el texto se emite token a token tal como lo produce
+        # el modelo; la ruta HTTP sigue recibiendo la respuesta completa.
+        answer, suggestion = generate_answer_with_memory(
+            state["question"], context,
+            memory_context=[{"summary": item.summary, "location": item.location, "category": item.category} for item in memories],
+            base_language=state.get("base_language", "es"),
+            on_token=emit_token if streaming else None,
+            abort_signal=abort_signal,
         )
+    except GenerationAborted:
+        # Interrupción del cliente: no hay respuesta final. Los tokens ya
+        # entregados se conservan y el turno se cierra como interrumpido.
+        logger.info("Generación abortada por interrupción del cliente")
+        raise
     except Exception as exc:
         logger.exception("No se pudo generar una respuesta RAG")
         if incident and incident.get("status"):
@@ -275,12 +365,33 @@ def generate_node(state: AgentState) -> dict[str, object]:
             )
         else:
             answer = "No pude consultar el servicio de conocimiento ahora mismo. Inténtalo de nuevo más tarde."
+        _emit_deterministic(answer)
         output = {"answer": answer, "generation_error": type(exc).__name__}
         record_node(state, "generate", output)
         return output
-    output = {
-        "answer": answer,
-    }
+    memory_proposal = None
+    if suggestion.should_store and suggestion.summary.strip() and not state.get("pending_proposal_was_present", False):
+        proposal = create_proposal(
+            session_id=session_id,
+            summary=suggestion.summary,
+            location=suggestion.location,
+            category=suggestion.category,
+            confidence=suggestion.confidence,
+            trigger_message=state["question"],
+        )
+        if proposal:
+            confirmation = (
+                f"\n\nWould you like me to remember this for future conversations? “{proposal.proposed_summary}” Reply yes to save it or no to discard it."
+                if state.get("base_language", "es") == "en"
+                else f"\n\n¿Quieres que recuerde esto para futuras conversaciones? «{proposal.proposed_summary}» Responde sí para guardarlo o no para descartarlo."
+            )
+            answer += confirmation
+            memory_proposal = {"id": str(proposal.id), "summary": proposal.proposed_summary, "status": "pending"}
+    if streaming:
+        # Los tokens del modelo ya se emitieron; el cierre incluye el sufijo de
+        # confirmación de memoria para que el frontend pueda reconciliar.
+        emit_answer_final(answer)
+    output = {"answer": answer, "memory_proposal": memory_proposal or state.get("memory_proposal")}
     record_node(state, "generate", output)
     return output
 
@@ -289,16 +400,13 @@ def no_context_node(state: AgentState) -> dict[str, object]:
     if state.get("incident_error") or state.get("incident"):
         return incident_answer_node(state)
     if state.get("retrieval_error"):
-        output = {
-            "answer": "No pude consultar el servicio de conocimiento ahora mismo. Inténtalo de nuevo más tarde."
-        }
+        answer = "No pude consultar el servicio de conocimiento ahora mismo. Inténtalo de nuevo más tarde."
+        _emit_deterministic(answer)
+        output = {"answer": answer}
         record_node(state, "no_context", output)
         return output
-    output = {
-        "answer": (
-            "No encontré información suficiente "
-            "en la base de conocimiento de Brasaland."
-        ),
-    }
+    answer = "No encontré información suficiente en la base de conocimiento de Brasaland."
+    _emit_deterministic(answer)
+    output = {"answer": answer}
     record_node(state, "no_context", output)
     return output

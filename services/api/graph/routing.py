@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from graph.incident_tool import extract_incident_id
+from graph.incident_tool_adapter import extract_incident_id
 from graph.state import AgentState
 
 _INCIDENT_INTENT = re.compile(
@@ -14,6 +14,15 @@ _KNOWLEDGE_INTENT = re.compile(
     r"fideliz\w*|descuento\w*|procedimiento\w*|pol[ií]tica\w*|horario\w*|"
     r"pedido\w*|residuo\w*|desperdicio\w*|limpieza\w*|allergen\w*|supplier\w*|"
     r"loyalty\w*|policy\w*|procedure\w*)\b"
+)
+_MEMORY_RECALL_INTENT = re.compile(
+    r"(?i)\b(?:recuerd\w*\s+(?:algo|qué|que\s+pas[oó]|qui[eé]n|cu[aá]l|d[oó]nde|"
+    r"c[oó]mo)|(?:do\s+you\s+)?remember\s+(?:anything|something|what|who|where|how)|"
+    r"what\s+(?:does|did)\s+.+\s+prefer\w*|qu[eé]\s+prefiere\s+.+\s+(?:gerente|manager))\b"
+)
+_EXPLICIT_MEMORY_INTENT = re.compile(
+    r"(?i)\b(?:recuerda(?:me)?\s+(?:esto|que)\b|acu[eé]rdate\s+(?:de\s+)?(?:esto|que)\b|"
+    r"remember\s+(?:this|that)\b|please\s+remember\b)"
 )
 
 
@@ -35,6 +44,14 @@ def route_context(state: AgentState) -> str:
     # Mixed queries always go through generate_node even when RAG returns empty
     # — the incident data may be sufficient to answer.
     if state.get("route") == "incident_then_rag":
+        return "generate"
+    if state.get("pending_proposal_was_present"):
+        return "generate"
+    # Recall questions and explicit remember requests both need generation
+    # when RAG is empty: one searches approved memories, the other may propose
+    # a new operational memory for the user's approval.
+    if (_MEMORY_RECALL_INTENT.search(state["question"])
+            or _EXPLICIT_MEMORY_INTENT.search(state["question"])):
         return "generate"
     return "generate" if state["context"] else "no_context"
 
