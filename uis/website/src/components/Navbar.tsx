@@ -17,6 +17,9 @@ export default function Navbar({ mode = "home" }: NavbarProps) {
           <img
             src="https://dummyimage.com/44x44/f97316/ffffff.png&text=B"
             alt="Logotipo de Brasaland"
+            width="44"
+            height="44"
+            loading="lazy"
             className="h-11 w-11 rounded-xl"
           />
           <div>

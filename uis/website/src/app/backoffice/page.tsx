@@ -1,15 +1,15 @@
-import type { WasteRecord } from "@repo/types/model";
-import { sampleLocations, sampleMenuItems, sampleSales } from "@repo/data/sample";
-import { filterActiveLocations, sortMenuItemsByPrice } from "@repo/utils/collections";
-import { findLocationById, findMenuItemByName } from "@repo/utils/search";
+import type { WasteRecord } from "@/lib/repo-data/types/model.mts";
+import { sampleLocations, sampleMenuItems, sampleSales } from "@/lib/repo-data/data/sample.mts";
+import { filterActiveLocations, sortMenuItemsByPrice } from "@/lib/repo-data/utils/collections.mts";
+import { findLocationById, findMenuItemByName } from "@/lib/repo-data/utils/search.mts";
 import {
   calculateAverageTicket,
   calculateDailyRevenue,
   calculateCountryComparison,
   findTopSellingItems,
   rankLocationsByPerformance,
-} from "@repo/utils/transformations";
-import { validateLocation, validateMenuItem, validateSaleTransaction } from "@repo/utils/validation";
+} from "@/lib/repo-data/utils/transformations.mts";
+import { validateLocation, validateMenuItem, validateSaleTransaction } from "@/lib/repo-data/utils/validation.mts";
 
 export default function BackofficeHomePage() {
   const referenceDate = new Date("2024-03-15T00:00:00");
