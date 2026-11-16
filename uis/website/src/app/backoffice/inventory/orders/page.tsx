@@ -19,15 +19,16 @@ export default function OrdersHistoryPage() {
     try {
       const data = await fetchOrders();
       setOrders(data);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Error al cargar las órdenes.");
+    } catch {
+      setError("No se pudieron cargar las órdenes. Comprueba tu conexión e inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadOrders();
+    const timer = window.setTimeout(() => void loadOrders(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadOrders]);
 
   // ======================================================================

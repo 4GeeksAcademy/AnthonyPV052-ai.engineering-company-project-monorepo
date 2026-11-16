@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -447,14 +448,13 @@ def main() -> int:
 	)
 	args = parser.parse_args()
 
-	if not args.csv_path.exists():
-		print(f"Error: no existe el archivo CSV: {args.csv_path}")
+	try:
+		rules = get_rules(args.context)
+		result = analyze(args.csv_path, rules)
+		expected_payload = load_json_if_exists(args.expected) or {}
+	except (OSError, csv.Error, json.JSONDecodeError, ValueError) as error:
+		print(f"Error al leer el contexto, el CSV o los valores esperados: {error}", file=sys.stderr)
 		return 1
-
-	rules = get_rules(args.context)
-	result = analyze(args.csv_path, rules)
-
-	expected_payload = load_json_if_exists(args.expected) or {}
 	# Soporta expected plano o expected anidado como {"summary": {...}}
 	expected_summary = expected_payload.get("summary", expected_payload)
 	mismatches = compare_expected(result["summary"], expected_summary) if expected_summary else []
@@ -463,18 +463,30 @@ def main() -> int:
 	print_summary(result, args.csv_path, mismatches)
 
 	if args.json_output is not None:
-		args.json_output.parent.mkdir(parents=True, exist_ok=True)
-		args.json_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+		try:
+			args.json_output.parent.mkdir(parents=True, exist_ok=True)
+			args.json_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+		except OSError as error:
+			print(f"Error al escribir el JSON de salida: {error}", file=sys.stderr)
+			return 1
 
 	if args.no_prompt:
 		if args.export_csv_path is not None:
-			export_results_csv(args.export_csv_path, rows_for_export(result, mismatches))
+			try:
+				export_results_csv(args.export_csv_path, rows_for_export(result, mismatches))
+			except OSError as error:
+				print(f"Error al exportar el CSV: {error}", file=sys.stderr)
+				return 1
 			print(f"Resultados exportados en: {args.export_csv_path.resolve()}")
 	else:
 		choice = input("¿Deseas exportar los resultados a CSV? [s / n] ").strip().lower()
 		if choice == "s":
 			output_path = Path("results.csv")
-			export_results_csv(output_path, rows_for_export(result, mismatches))
+			try:
+				export_results_csv(output_path, rows_for_export(result, mismatches))
+			except OSError as error:
+				print(f"Error al exportar el CSV: {error}", file=sys.stderr)
+				return 1
 			print(f"Resultados exportados en: {output_path.resolve()}")
 		else:
 			print("Exportacion omitida.")

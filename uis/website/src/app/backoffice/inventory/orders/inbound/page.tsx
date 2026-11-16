@@ -55,6 +55,8 @@ export default function InboundOrderPage() {
 
   const [products, setProducts] = useState<IngredientResponse[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [productsRetry, setProductsRetry] = useState(0);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +68,7 @@ export default function InboundOrderPage() {
 
     async function load() {
       setProductsLoading(true);
+      setProductsError(null);
       try {
         const data = await fetchProducts();
         if (cancelled) return;
@@ -75,13 +78,9 @@ export default function InboundOrderPage() {
         if (preselectedId && data.some((p) => p.id === Number(preselectedId))) {
           setForm((prev) => ({ ...prev, productId: preselectedId }));
         }
-      } catch (caught) {
+      } catch {
         if (!cancelled) {
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Error al cargar los productos.",
-          );
+          setProductsError("No se pudieron cargar los productos. Comprueba tu conexión e inténtalo de nuevo.");
         }
       } finally {
         if (!cancelled) setProductsLoading(false);
@@ -92,7 +91,7 @@ export default function InboundOrderPage() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams]);
+  }, [searchParams, productsRetry]);
 
   // Actualizar campo individual
   function updateField<K extends keyof FormState>(field: K, value: FormState[K]) {
@@ -144,12 +143,8 @@ export default function InboundOrderPage() {
         setSuccess(
           `Entrada registrada correctamente: ${quantity} unidades de ${products.find((p) => p.id === productId)?.name ?? "producto"}.`,
         );
-      } catch (caught) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "Error al registrar la entrada.",
-        );
+      } catch {
+        setError("No se pudo registrar la entrada. Comprueba los datos e inténtalo de nuevo.");
       } finally {
         setSubmitting(false);
       }
@@ -249,6 +244,11 @@ export default function InboundOrderPage() {
             <p className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-500">
               Cargando productos…
             </p>
+          ) : productsError ? (
+            <div role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              <p>{productsError}</p>
+              <button type="button" onClick={() => setProductsRetry((value) => value + 1)} className="mt-2 font-semibold underline">Reintentar carga</button>
+            </div>
           ) : (
             <select
               id="productId"

@@ -48,6 +48,13 @@ export class AnalyzeInputError extends Error {
   }
 }
 
+export class AnalyzeServiceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AnalyzeServiceError";
+  }
+}
+
 function getRepoRoot(): string {
   return path.resolve(process.cwd(), "..", "..");
 }
@@ -73,12 +80,22 @@ export async function analyzeIncidentsCsvWithScript(
   const contextPath = path.join(repoRoot, "data", "process", "incidencias_contexto.json");
   const expectedPath = path.join(repoRoot, "data", "eval", "incidencias_expected.json");
 
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "incidents-analysis-"));
+  let tmpDir: string;
+  try {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "incidents-analysis-"));
+  } catch {
+    throw new AnalyzeServiceError("No se pudo preparar el análisis.");
+  }
   const inputPath = path.join(tmpDir, "input.csv");
   const outputJsonPath = path.join(tmpDir, "analysis.json");
   const outputCsvPath = path.join(tmpDir, "results.csv");
 
-  await fs.writeFile(inputPath, csvText, "utf-8");
+  try {
+    await fs.writeFile(inputPath, csvText, "utf-8");
+  } catch {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    throw new AnalyzeServiceError("No se pudo preparar el archivo para su análisis.");
+  }
 
   const args = [
     scriptPath,
@@ -99,9 +116,14 @@ export async function analyzeIncidentsCsvWithScript(
       cwd: repoRoot,
       maxBuffer: 1024 * 1024 * 10,
     });
-  } catch {
+  } catch (error) {
     // El script puede salir con código 2 cuando expected no coincide.
     // En ese caso también consumimos los artefactos generados.
+    const exitCode = error && typeof error === "object" && "code" in error ? error.code : null;
+    if (exitCode !== 2) {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+      throw new AnalyzeServiceError("El análisis no pudo completarse. Inténtalo de nuevo más tarde.");
+    }
   }
 
   try {
@@ -117,11 +139,9 @@ export async function analyzeIncidentsCsvWithScript(
     }
 
     return { result, csvExport };
-  } catch {
-    throw new AnalyzeInputError(
-      "No se pudo procesar el CSV. Verifica formato y columnas obligatorias.",
-      422,
-    );
+  } catch (error) {
+    if (error instanceof AnalyzeInputError) throw error;
+    throw new AnalyzeServiceError("No se pudieron leer los resultados del análisis.");
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }

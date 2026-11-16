@@ -24,6 +24,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [loadRetry, setLoadRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -39,8 +40,8 @@ export default function ProfilePage() {
           phone: currentUser.profile?.phone ?? "",
           address: currentUser.profile?.address ?? "",
         });
-      } catch (caughtError) {
-        if (active) setError(caughtError instanceof Error ? caughtError.message : "No se pudo cargar tu perfil.");
+      } catch {
+        if (active) setError("No se pudo cargar tu perfil.");
       } finally {
         if (active) setLoading(false);
       }
@@ -50,7 +51,7 @@ export default function ProfilePage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadRetry]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,7 +72,7 @@ export default function ProfilePage() {
       if (caughtError instanceof ApiError && caughtError.status === 422) {
         setError("Revisa el formato de los datos antes de guardar.");
       } else {
-        setError(caughtError instanceof Error ? caughtError.message : "No se pudo actualizar el perfil.");
+        setError("No se pudo actualizar el perfil. Comprueba tu conexión e inténtalo de nuevo.");
       }
     } finally {
       setSaving(false);
@@ -92,16 +93,21 @@ export default function ProfilePage() {
       <section className="rounded-2xl border border-slate-700 bg-slate-900 p-6 sm:p-8">
         {loading ? (
           <p className="text-sm text-slate-300">Cargando perfil…</p>
+        ) : error && !user ? (
+          <div role="alert" className="space-y-3 rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 text-sm text-rose-100">
+            <p>{error} Comprueba tu conexión e inténtalo de nuevo.</p>
+            <button type="button" onClick={() => { setError(null); setLoading(true); setLoadRetry((retry) => retry + 1); }} className="font-semibold underline">Reintentar carga</button>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid gap-4 rounded-xl border border-slate-700 bg-slate-950/70 p-4 sm:grid-cols-2">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Email</p>
-                <p className="mt-1 break-all text-sm text-white">{user?.email}</p>
+                <p className="mt-1 break-all text-sm text-white">{user?.email ?? "No disponible"}</p>
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Rol</p>
-                <p className="mt-1 text-sm capitalize text-white">{user?.role}</p>
+                <p className="mt-1 text-sm capitalize text-white">{user?.role ?? "No disponible"}</p>
               </div>
             </div>
 

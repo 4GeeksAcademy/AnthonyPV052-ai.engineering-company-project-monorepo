@@ -87,15 +87,16 @@ export default function InventoryProductsPage() {
     try {
       const data = await fetchProducts(countryFilter || undefined);
       setProducts(data);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Error al cargar los productos.");
+    } catch {
+      setError("No se pudieron cargar los productos. Comprueba tu conexión e inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
   }, [countryFilter]);
 
   useEffect(() => {
-    void loadProducts();
+    const timer = window.setTimeout(() => void loadProducts(), 0);
+    return () => window.clearTimeout(timer);
   }, [loadProducts]);
 
   return (

@@ -18,3 +18,6 @@ python scripts/seed_incidents.py --validate-only
 
 python scripts/seed_incidents.py
 ```
+
+Returns exit code `1` for I/O or CSV structure errors, `2` when one or more rows
+are invalid, and `0` when validation/import completes without invalid rows.

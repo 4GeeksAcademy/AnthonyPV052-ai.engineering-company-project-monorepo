@@ -111,13 +111,15 @@ def seed_incidents(csv_path: Path = DEFAULT_CSV_PATH, *, validate_only: bool = F
     db = get_incidents_db()
     query = Query()
     inserted = skipped = 0
-    for payload in payloads:
-        if db.contains(query.id == payload["id"]):
-            skipped += 1
-            continue
-        db.insert(IncidentStored(**payload).model_dump(mode="json"))
-        inserted += 1
-    db.close()
+    try:
+        for payload in payloads:
+            if db.contains(query.id == payload["id"]):
+                skipped += 1
+                continue
+            db.insert(IncidentStored(**payload).model_dump(mode="json"))
+            inserted += 1
+    finally:
+        db.close()
     return inserted, skipped, invalid_rows
 
 
@@ -136,8 +138,9 @@ def main() -> int:
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args()
     try:
-        print_report(*seed_incidents(args.csv, validate_only=args.validate_only))
-        return 0
+        result = seed_incidents(args.csv, validate_only=args.validate_only)
+        print_report(*result)
+        return 2 if result[2] else 0
     except (OSError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

@@ -35,14 +35,13 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    console.error("Failed to analyze incidents CSV", error);
+    const invalidCsv = error instanceof Error && /csv|column|parse|format/i.test(error.message);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `Error al procesar el archivo: ${error.message}`
-            : "Error inesperado al procesar el archivo.",
+        error: "No se pudo procesar el archivo. Revisa que sea un CSV válido e inténtalo de nuevo.",
       },
-      { status: 500 },
+      { status: invalidCsv ? 422 : 500 },
     );
   }
 }

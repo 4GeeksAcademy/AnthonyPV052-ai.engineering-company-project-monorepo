@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -195,10 +196,13 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    context = load_json(args.context)
-    result = analyze_csv(args.input, context)
-
-    expected = load_json(args.expected)
+    try:
+        context = load_json(args.context)
+        result = analyze_csv(args.input, context)
+        expected = load_json(args.expected)
+    except (OSError, csv.Error, json.JSONDecodeError, ValueError) as error:
+        print(f"Error al leer el contexto, el CSV o los valores esperados: {error}", file=sys.stderr)
+        return 1
     mismatches = compare_expected(result["resumen"], expected)
     result["validacion_esperada"] = {
         "coincide": len(mismatches) == 0,
@@ -209,10 +213,18 @@ def main() -> int:
     print(output_json)
 
     if args.output_json:
-        args.output_json.parent.mkdir(parents=True, exist_ok=True)
-        args.output_json.write_text(output_json + "\n", encoding="utf-8")
+        try:
+            args.output_json.parent.mkdir(parents=True, exist_ok=True)
+            args.output_json.write_text(output_json + "\n", encoding="utf-8")
+        except OSError as error:
+            print(f"Error al escribir el JSON de salida: {error}", file=sys.stderr)
+            return 1
 
-    write_summary_csv(args.output_csv, result["resumen"])
+    try:
+        write_summary_csv(args.output_csv, result["resumen"])
+    except OSError as error:
+        print(f"Error al exportar el resumen CSV: {error}", file=sys.stderr)
+        return 1
 
     return 0 if len(mismatches) == 0 else 2
 

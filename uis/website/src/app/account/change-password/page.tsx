@@ -32,7 +32,7 @@ export default function ChangePasswordPage() {
       if (caughtError instanceof ApiError && caughtError.status === 400) {
         setError("La contraseña actual no es correcta.");
       } else {
-        setError(caughtError instanceof Error ? caughtError.message : "No se pudo cambiar la contraseña.");
+        setError("No se pudo cambiar la contraseña. Comprueba tu conexión e inténtalo de nuevo.");
       }
     } finally {
       setSubmitting(false);

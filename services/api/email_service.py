@@ -45,8 +45,7 @@ def send_password_reset_email(*, recipient: str, reset_token: str, expires_at: d
             if response.status not in {200, 201, 202}:
                 raise RuntimeError(f"Resend returned an unexpected status: {response.status}")
     except HTTPError as exc:
-        response_body = exc.read().decode("utf-8", errors="replace")[:500]
-        logger.warning("Resend rejected password-reset email with HTTP %s: %s", exc.code, response_body)
+        logger.warning("Resend rejected password-reset email with HTTP %s", exc.code)
         raise RuntimeError("Could not send password reset email") from exc
     except URLError as exc:
         logger.warning("Could not reach Resend while sending password-reset email: %s", exc.reason)

@@ -53,7 +53,10 @@ export function errorFrom(payload: unknown): { field?: string; message: string }
   if (payload && typeof payload === "object") {
     const result = payload as { error?: { field?: string; message?: string }; detail?: { field?: string; message?: string } };
     const error = result.error ?? result.detail;
-    if (error?.message) return { field: error.field, message: error.message };
+    const validFields = new Set(["title", "description", "category", "status", "origin", "branch", "form"]);
+    if (typeof error?.message === "string" && validFields.has(error.field ?? "form")) {
+      return { field: error.field, message: error.message };
+    }
   }
   return { message: "No pudimos completar la operación. Inténtalo de nuevo." };
 }

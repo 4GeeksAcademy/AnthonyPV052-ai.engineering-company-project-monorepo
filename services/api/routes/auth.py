@@ -64,8 +64,14 @@ def forgot_password(payload: ForgotPasswordRequest) -> MessageResponse:
         try:
             token, token_id, expires_at = create_password_reset_token(user_id=user["id"])
             create_password_reset_token_record(token_id=token_id, user_id=user["id"], expires_at=expires_at)
-            send_password_reset_email(recipient=user["email"], reset_token=token, expires_at=expires_at)
         except Exception:
+            logger.exception("Could not create password-reset token")
+            # Preserve the endpoint's anti-enumeration response while logging
+            # the internal failure for operators.
+            return MessageResponse(message="If that address is registered, you will receive a reset link shortly.")
+        try:
+            send_password_reset_email(recipient=user["email"], reset_token=token, expires_at=expires_at)
+        except RuntimeError:
             # Do not disclose delivery or account information to the requester.
             logger.exception("Password-reset email delivery failed")
 

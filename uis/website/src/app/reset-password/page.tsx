@@ -35,7 +35,7 @@ export default function ResetPasswordPage() {
       if (caughtError instanceof ApiError && caughtError.status === 400) {
         setError("El enlace no es válido, ya fue usado o ha caducado. Solicita uno nuevo.");
       } else {
-        setError(caughtError instanceof Error ? caughtError.message : "No se pudo restablecer la contraseña.");
+        setError("No se pudo restablecer la contraseña. Solicita otro enlace e inténtalo de nuevo.");
       }
     } finally {
       setSubmitting(false);
