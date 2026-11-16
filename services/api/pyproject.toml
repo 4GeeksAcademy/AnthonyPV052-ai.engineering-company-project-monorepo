@@ -15,6 +15,12 @@ dependencies = [
   "psycopg2-binary>=2.9.12",
 ]
 
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+]
+
 [project.scripts]
 seed = "seed:main"
 seed-inventory = "seed_inventory:main"
