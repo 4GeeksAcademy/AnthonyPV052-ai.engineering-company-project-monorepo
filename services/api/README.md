@@ -10,9 +10,14 @@ Crear archivo `.env` dentro de `services/api` usando `.env.example`:
 - `JWT_SECRET_KEY`: clave para firma JWT.
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: expiración del access token en minutos.
 - `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`: expiración del enlace de restablecimiento (por defecto, 15 minutos).
-- `RESEND_API_KEY`: API key de Resend para enviar los correos de restablecimiento.
-- `RESEND_FROM_EMAIL`: remitente con dominio verificado en Resend.
-- `APP_BASE_URL`: URL pública de website para construir el enlace de restablecimiento.
+- `SMTP_HOST`: servidor SMTP (por defecto, `smtp-relay.brevo.com`).
+- `SMTP_PORT`: puerto SMTP con STARTTLS (por defecto, `587`).
+- `SMTP_LOGIN`: usuario SMTP de Brevo.
+- `SMTP_KEY`: clave SMTP de Brevo (no es la clave API).
+- `SMTP_FROM_EMAIL`: dirección remitente verificada en Brevo.
+- `APP_BASE_URL`: URL del website que abrirá el usuario (en local, `http://localhost:3000`).
+
+Para Docker, define `SMTP_LOGIN`, `SMTP_KEY` y `SMTP_FROM_EMAIL` en el `.env` de la raíz del monorepo. No compartas ni subas la clave SMTP al repositorio.
 
 ## Ejecutar con Docker
 

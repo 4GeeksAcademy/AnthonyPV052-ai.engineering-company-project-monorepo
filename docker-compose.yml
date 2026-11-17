@@ -13,7 +13,13 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
-      - APP_BASE_URL=http://frontend:3000
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:3000}
+      - SMTP_HOST=${SMTP_HOST:-smtp-relay.brevo.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_LOGIN=${SMTP_LOGIN}
+      - SMTP_KEY=${SMTP_KEY}
+      - SMPT_KEY=${SMPT_KEY}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
     networks:
       - brasaland-net
     command: ["uv", "run", "uvicorn", "main:app", "--reload", "--port", "8020", "--host", "0.0.0.0"]
@@ -23,9 +29,11 @@ services:
       context: ./uis
       dockerfile: Dockerfile
     container_name: brasaland-frontend
+    working_dir: /app/website
     volumes:
-      - ./uis/website:/app
-      - /app/node_modules
+      - ./uis/website:/app/website
+      - /app/website/node_modules
+      - ./src:/app/src
     ports:
       - "3000:3000"
     environment:
@@ -34,7 +42,7 @@ services:
       - backend
     networks:
       - brasaland-net
-    command: ["npx", "next", "dev", "-p", "3000"]
+    command: ["node_modules/.bin/next", "dev", "-p", "3000"]
 
 networks:
   brasaland-net:
