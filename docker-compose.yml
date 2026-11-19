@@ -149,7 +149,7 @@ services:
       - MCP_BRASALAND_PORT=8100
       - MCP_BRASALAND_API_BASE_URL=http://host.docker.internal:8020
       - MCP_BRASALAND_USE_FALLBACK_AUTH=true
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required. Set it in .env or export it.}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     extra_hosts:
       - "host.docker.internal:host-gateway"

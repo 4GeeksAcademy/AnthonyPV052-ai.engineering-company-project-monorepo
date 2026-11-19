@@ -11,7 +11,7 @@ for path in (ROOT, API_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from graph.routing import route_sources, route_context  # noqa: E402
+from graph.routing import route_sources  # noqa: E402
 from graph.incident_tool_adapter import IncidentToolInput, IncidentToolOutput  # noqa: E402
 from graph.nodes import generate_node, no_context_node, retrieve_node  # noqa: E402
 
