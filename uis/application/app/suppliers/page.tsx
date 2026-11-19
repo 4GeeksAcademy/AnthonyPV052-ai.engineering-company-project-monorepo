@@ -64,14 +64,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
-    try {
-      const payload = (await response.json()) as { detail?: string; error?: string };
-      detail = payload.detail ?? payload.error ?? detail;
-    } catch {
-      // Ignore parse errors.
-    }
-    throw new Error(detail);
+    const messages: Record<number, string> = {
+      400: "Revisa los datos enviados e inténtalo de nuevo.",
+      401: "Tu sesión ha caducado. Inicia sesión de nuevo.",
+      403: "No tienes permiso para realizar esta acción.",
+      404: "El proveedor ya no está disponible. Actualiza el listado.",
+      409: "El proveedor ya existe o tiene datos incompatibles.",
+      422: "Algunos datos no son válidos. Revisa el formulario.",
+    };
+    throw new Error(messages[response.status] ?? "No se pudo completar la operación. Inténtalo de nuevo.");
   }
 
   return (await response.json()) as T;
@@ -100,6 +101,8 @@ export default function SuppliersPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState<SupplierCreateForm>(EMPTY_FORM);
   const [rateDrafts, setRateDrafts] = useState<Record<number, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [updatingSupplier, setUpdatingSupplier] = useState<number | null>(null);
 
   const path = useMemo(() => {
     const params = new URLSearchParams();
@@ -120,7 +123,7 @@ export default function SuppliersPage() {
         setError(null);
       } catch (caughtError) {
         if (!active) return;
-        setError(caughtError instanceof Error ? caughtError.message : "Error al cargar proveedores");
+        setError("No se pudieron cargar los proveedores. Comprueba tu conexión e inténtalo de nuevo.");
       } finally {
         if (active) {
           setLoading(false);
@@ -143,6 +146,7 @@ export default function SuppliersPage() {
 
     setError(null);
     setMessage(null);
+    setSubmitting(true);
 
     try {
       await apiFetch<Supplier>("/supplier", {
@@ -159,7 +163,9 @@ export default function SuppliersPage() {
       const data = await apiFetch<Supplier[]>(path);
       setSuppliers(data);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Error al crear proveedor");
+      setError("No se pudo crear el proveedor. Revisa los datos e inténtalo de nuevo.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -171,30 +177,40 @@ export default function SuppliersPage() {
     }
 
     setError(null);
+    setMessage(null);
+    setUpdatingSupplier(supplier.id);
     try {
       await apiFetch<Supplier>(`/suppliers/${supplier.id}/rate`, {
         method: "PATCH",
         body: JSON.stringify({ rate_per_unit: Number(draft) }),
       });
+      setMessage("Tarifa actualizada correctamente.");
       const data = await apiFetch<Supplier[]>(path);
       setSuppliers(data);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Error al actualizar tarifa");
+      setError("No se pudo actualizar la tarifa. Comprueba los datos e inténtalo de nuevo.");
+    } finally {
+      setUpdatingSupplier(null);
     }
   };
 
   const onToggleStatus = async (supplier: Supplier) => {
     const nextStatus: SupplierStatus = supplier.status === "active" ? "suspended" : "active";
     setError(null);
+    setMessage(null);
+    setUpdatingSupplier(supplier.id);
     try {
       await apiFetch<Supplier>(`/suppliers/${supplier.id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status: nextStatus }),
       });
+      setMessage(`Estado actualizado a ${nextStatus === "active" ? "activo" : "suspendido"}.`);
       const data = await apiFetch<Supplier[]>(path);
       setSuppliers(data);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Error al actualizar estado");
+      setError("No se pudo actualizar el estado. Comprueba tu conexión e inténtalo de nuevo.");
+    } finally {
+      setUpdatingSupplier(null);
     }
   };
 
@@ -238,7 +254,7 @@ export default function SuppliersPage() {
       </section>
 
       {message && <p className="rounded bg-emerald-700/30 p-2 text-sm">{message}</p>}
-      {error && <p className="rounded bg-rose-700/30 p-2 text-sm">{error}</p>}
+      {error && <div role="alert" className="rounded bg-rose-700/30 p-2 text-sm"><p>{error}</p><button type="button" disabled={loading} onClick={() => window.location.reload()} className="mt-2 font-semibold underline disabled:opacity-60">{loading ? "Cargando…" : "Reintentar carga"}</button></div>}
 
       <section className="overflow-x-auto rounded border border-slate-800">
         <table className="min-w-full text-left text-sm">
@@ -255,11 +271,11 @@ export default function SuppliersPage() {
           <tbody>
             {suppliers.map((supplier) => (
               <tr key={supplier.id} className="border-t border-slate-800">
-                <td className="px-3 py-2">{supplier.name}</td>
+                <td className="px-3 py-2">{supplier.name || "Nombre no disponible"}</td>
                 <td className="px-3 py-2">{supplier.country}</td>
-                <td className="px-3 py-2">{supplier.categories.join(", ")}</td>
-                <td className="px-3 py-2">{supplier.rate_per_unit} {supplier.currency}</td>
-                <td className="px-3 py-2"><StatusBadge status={supplier.status} /></td>
+                <td className="px-3 py-2">{Array.isArray(supplier.categories) && supplier.categories.length ? supplier.categories.join(", ") : "Sin categorías"}</td>
+                <td className="px-3 py-2">{supplier.rate_per_unit ?? "No disponible"} {supplier.currency ?? ""}</td>
+                <td className="px-3 py-2"><StatusBadge status={supplier.status === "suspended" ? "suspended" : "active"} /></td>
                 <td className="px-3 py-2">
                   <div className="flex flex-col gap-2">
                     <div className="flex gap-2">
@@ -274,14 +290,16 @@ export default function SuppliersPage() {
                       <button
                         type="button"
                         onClick={() => void onUpdateRate(supplier)}
+                        disabled={updatingSupplier === supplier.id}
                         className="rounded bg-cyan-300 px-2 py-1 text-slate-900"
                       >
-                        Tarifa
+                        {updatingSupplier === supplier.id ? "Guardando…" : "Tarifa"}
                       </button>
                     </div>
                     <button
                       type="button"
                       onClick={() => void onToggleStatus(supplier)}
+                      disabled={updatingSupplier === supplier.id}
                       className="rounded border border-slate-600 px-2 py-1"
                     >
                       {supplier.status === "active" ? "Suspender" : "Activar"}
@@ -353,8 +371,8 @@ export default function SuppliersPage() {
             onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
             className="sm:col-span-2 rounded border border-slate-700 bg-slate-900 p-2"
           />
-          <button type="submit" className="w-fit rounded bg-emerald-300 px-4 py-2 font-semibold text-slate-900">
-            Crear proveedor
+          <button type="submit" disabled={submitting} className="w-fit rounded bg-emerald-300 px-4 py-2 font-semibold text-slate-900 disabled:opacity-60">
+            {submitting ? "Creando…" : "Crear proveedor"}
           </button>
         </form>
       </section>

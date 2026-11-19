@@ -118,6 +118,7 @@ services:
       context: .
       dockerfile: uis/Dockerfile
     container_name: brasaland-frontend
+    working_dir: /app/website
     volumes:
       - ./uis/website:/app/uis/website
       - ./src:/app/src

@@ -89,6 +89,14 @@ class ApiError extends Error {
   }
 }
 
+function getPublicErrorMessage(status: number): string {
+  if (status === 400 || status === 422) return "Revisa los datos enviados e inténtalo de nuevo.";
+  if (status === 401 || status === 403) return "No tienes autorización para esta acción. Inicia sesión y vuelve a intentarlo.";
+  if (status === 404) return "No se encontró el registro solicitado. Actualiza la página e inténtalo de nuevo.";
+  if (status >= 500) return "El servicio no está disponible. Inténtalo de nuevo más tarde.";
+  return "No se pudo completar la solicitud. Comprueba tu conexión e inténtalo de nuevo.";
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
     return undefined as T;
@@ -99,16 +107,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
   const body = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const message =
-      (isJson &&
-        typeof body === "object" &&
-        body !== null &&
-        "detail" in body &&
-        typeof (body as { detail?: unknown }).detail === "string" &&
-        (body as { detail: string }).detail) ||
-      `Request failed with status ${response.status}`;
-
-    throw new ApiError(message, response.status, body);
+    throw new ApiError(getPublicErrorMessage(response.status), response.status);
   }
 
   return body as T;
@@ -131,11 +130,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       throw error;
     }
 
-    throw new Error(
-      error instanceof Error
-        ? `Network error: ${error.message}`
-        : "Network error: unknown error"
-    );
+    throw new Error("No se pudo conectar con el servicio. Comprueba tu conexión e inténtalo de nuevo.");
   }
 }
 

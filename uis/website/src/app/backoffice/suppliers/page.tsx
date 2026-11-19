@@ -74,6 +74,8 @@ export default function SuppliersDirectoryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [updatingSupplier, setUpdatingSupplier] = useState<number | null>(null);
 
   const [form, setForm] = useState<SupplierCreateForm>(EMPTY_FORM);
   const [rateDrafts, setRateDrafts] = useState<Record<number, string>>({});
@@ -86,18 +88,16 @@ export default function SuppliersDirectoryPage() {
     return query ? `/suppliers?${query}` : "/suppliers";
   }, [countryFilter, categoryFilter]);
 
-  async function loadSuppliers(showLoading = true) {
+  async function loadSuppliers() {
     setLoading(true);
     setError(null);
     try {
       const data = await authenticatedApiFetch<Supplier[]>(filteredPath);
       setSuppliers(data);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Error al cargar proveedores.");
+    } catch {
+      setError("No se pudieron cargar los proveedores. Comprueba tu conexión e inténtalo de nuevo.");
     } finally {
-      if (showLoading) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   }
 
@@ -105,15 +105,17 @@ export default function SuppliersDirectoryPage() {
     let cancelled = false;
 
     async function fetchOnFilterChange() {
+      setLoading(true);
+      setError(null);
       try {
         const data = await authenticatedApiFetch<Supplier[]>(filteredPath);
         if (!cancelled) {
           setSuppliers(data);
           setError(null);
         }
-      } catch (caughtError) {
+      } catch {
         if (!cancelled) {
-          setError(caughtError instanceof Error ? caughtError.message : "Error al cargar proveedores.");
+          setError("No se pudieron cargar los proveedores. Comprueba tu conexión e inténtalo de nuevo.");
         }
       } finally {
         if (!cancelled) {
@@ -133,6 +135,7 @@ export default function SuppliersDirectoryPage() {
     event.preventDefault();
     setError(null);
     setMessage(null);
+    setCreating(true);
 
     try {
       const payload = {
@@ -150,8 +153,10 @@ export default function SuppliersDirectoryPage() {
       setMessage("Proveedor creado correctamente.");
       setForm({ ...EMPTY_FORM, country: form.country, currency: form.currency });
       await loadSuppliers();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Error al crear proveedor.");
+    } catch {
+      setError("No se pudo crear el proveedor. Revisa los datos e inténtalo de nuevo.");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -164,6 +169,7 @@ export default function SuppliersDirectoryPage() {
 
     setError(null);
     setMessage(null);
+    setUpdatingSupplier(supplier.id);
 
     try {
       await authenticatedApiFetch<Supplier>(`/suppliers/${supplier.id}/rate`, {
@@ -172,8 +178,10 @@ export default function SuppliersDirectoryPage() {
       });
       setMessage(`Tarifa actualizada para ${supplier.name}.`);
       await loadSuppliers();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Error al actualizar tarifa.");
+    } catch {
+      setError("No se pudo actualizar la tarifa. Comprueba los datos e inténtalo de nuevo.");
+    } finally {
+      setUpdatingSupplier(null);
     }
   };
 
@@ -182,6 +190,7 @@ export default function SuppliersDirectoryPage() {
 
     setError(null);
     setMessage(null);
+    setUpdatingSupplier(supplier.id);
     try {
       await authenticatedApiFetch<Supplier>(`/suppliers/${supplier.id}/status`, {
         method: "PATCH",
@@ -189,8 +198,10 @@ export default function SuppliersDirectoryPage() {
       });
       setMessage(`Estado de ${supplier.name} actualizado a ${nextStatus}.`);
       await loadSuppliers();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Error al cambiar estado.");
+    } catch {
+      setError("No se pudo cambiar el estado. Comprueba tu conexión e inténtalo de nuevo.");
+    } finally {
+      setUpdatingSupplier(null);
     }
   };
 
@@ -245,7 +256,7 @@ export default function SuppliersDirectoryPage() {
           <h2 className="text-xl font-bold text-white">Estado de carga</h2>
           <p className="mt-3 text-sm text-slate-300">{loading ? "Cargando proveedores..." : `Resultados: ${suppliers.length}`}</p>
           {message && <p className="mt-3 rounded-lg bg-emerald-300/20 px-3 py-2 text-sm text-emerald-100">{message}</p>}
-          {error && <p className="mt-3 rounded-lg bg-rose-300/20 px-3 py-2 text-sm text-rose-100">{error}</p>}
+          {error && <div role="alert" className="mt-3 rounded-lg bg-rose-300/20 px-3 py-2 text-sm text-rose-100"><p>{error}</p><button type="button" disabled={loading} onClick={() => void loadSuppliers()} className="mt-2 font-semibold underline disabled:opacity-60">{loading ? "Cargando…" : "Reintentar carga"}</button></div>}
         </article>
       </section>
 
@@ -296,15 +307,17 @@ export default function SuppliersDirectoryPage() {
                         <button
                           type="button"
                           onClick={() => void onUpdateRate(supplier)}
+                          disabled={updatingSupplier === supplier.id}
                           className="rounded-md bg-cyan-300 px-2 py-1 text-xs font-semibold text-slate-900"
                         >
-                          Tarifa
+                          {updatingSupplier === supplier.id ? "Guardando…" : "Tarifa"}
                         </button>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => void onToggleStatus(supplier)}
+                        disabled={updatingSupplier === supplier.id}
                         className="rounded-md border border-slate-500 px-2 py-1 text-xs font-semibold text-slate-100"
                       >
                         {supplier.status === "active" ? "Suspender" : "Activar"}
@@ -424,9 +437,10 @@ export default function SuppliersDirectoryPage() {
           <div className="sm:col-span-2">
             <button
               type="submit"
+              disabled={creating}
               className="rounded-xl bg-emerald-300 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-900"
             >
-              Crear proveedor
+              {creating ? "Creando…" : "Crear proveedor"}
             </button>
           </div>
         </form>

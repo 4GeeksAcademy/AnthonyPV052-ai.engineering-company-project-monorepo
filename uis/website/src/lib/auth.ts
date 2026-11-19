@@ -22,11 +22,6 @@ type TokenResponse = {
   expires_in: number;
 };
 
-type ApiErrorPayload = {
-  detail?: string;
-  error?: string;
-};
-
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -69,11 +64,22 @@ export function clearToken(): void {
 }
 
 async function getErrorMessage(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as ApiErrorPayload;
-    return payload.detail ?? payload.error ?? `La API respondió con HTTP ${response.status}.`;
-  } catch {
-    return `La API respondió con HTTP ${response.status}.`;
+  switch (response.status) {
+    case 400:
+    case 422:
+      return "Revisa los datos ingresados y vuelve a intentarlo.";
+    case 401:
+      return "Tus datos de acceso no son válidos. Revísalos e inténtalo de nuevo.";
+    case 403:
+      return "No tienes permiso para realizar esta acción. Contacta con un administrador.";
+    case 404:
+      return "No encontramos la información solicitada. Actualiza la página e inténtalo de nuevo.";
+    case 409:
+      return "La solicitud entra en conflicto con los datos actuales. Revísalos e inténtalo de nuevo.";
+    default:
+      return response.status >= 500
+        ? "El servicio no está disponible ahora. Inténtalo de nuevo más tarde."
+        : "No se pudo completar la solicitud. Comprueba la conexión e inténtalo de nuevo.";
   }
 }
 

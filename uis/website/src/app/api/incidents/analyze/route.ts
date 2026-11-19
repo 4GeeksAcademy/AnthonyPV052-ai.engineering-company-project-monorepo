@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   AnalyzeInputError,
+  AnalyzeServiceError,
   analyzeIncidentsCsvWithScript,
 } from "@/services/api/incidents/analysis-service";
 import { saveLastAnalysis } from "@/services/api/incidents/results-store";
 import { logError } from "@/lib/logger"; // Usa tu logger real
+import type { IncidentsAnalysisResponse } from "@/services/api/incidents/analysis-service";
 
 export async function POST(request: Request) {
   // --- FASE 1: Validación de multipart/form-data ---
@@ -78,7 +80,7 @@ export async function POST(request: Request) {
   }
 
   // --- FASE 4: Análisis del CSV con el script ---
-  let result: any;
+  let result: IncidentsAnalysisResponse;
   let csvExport: string;
   try {
     const analysis = await analyzeIncidentsCsvWithScript(csvText, file.name);
@@ -88,6 +90,14 @@ export async function POST(request: Request) {
     if (error instanceof AnalyzeInputError) {
       // Este error es seguro porque tú lo controlas
       return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    if (error instanceof AnalyzeServiceError) {
+      logError("Error interno del servicio de análisis CSV", error);
+      return NextResponse.json(
+        { error: "No hemos podido preparar el análisis. Intenta de nuevo más tarde." },
+        { status: 500 },
+      );
     }
 
     // Error inesperado del script → NO exponer error.message

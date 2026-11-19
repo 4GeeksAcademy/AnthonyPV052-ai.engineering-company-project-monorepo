@@ -64,8 +64,13 @@ export default function OutboundOrderPage() {
 
   const [products, setProducts] = useState<IngredientResponse[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [productsRetry, setProductsRetry] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState<IngredientResponse | null>(null);
+  const [stockProductId, setStockProductId] = useState<number | null>(null);
   const [stockLoading, setStockLoading] = useState(false);
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [stockRetry, setStockRetry] = useState(0);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
@@ -87,6 +92,7 @@ export default function OutboundOrderPage() {
 
     async function load() {
       setProductsLoading(true);
+      setProductsError(null);
       try {
         const data = await fetchProducts();
         if (cancelled) return;
@@ -96,13 +102,9 @@ export default function OutboundOrderPage() {
         if (preselectedId && data.some((p) => p.id === Number(preselectedId))) {
           setForm((prev) => ({ ...prev, productId: preselectedId }));
         }
-      } catch (caught) {
+      } catch {
         if (!cancelled) {
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Error al cargar los productos.",
-          );
+          setProductsError("No se pudieron cargar los productos. Comprueba tu conexión e inténtalo de nuevo.");
         }
       } finally {
         if (!cancelled) setProductsLoading(false);
@@ -113,7 +115,7 @@ export default function OutboundOrderPage() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams]);
+  }, [searchParams, productsRetry]);
 
   // ======================================================================
   // Obtener stock actual cuando cambia la selección de producto
@@ -124,23 +126,31 @@ export default function OutboundOrderPage() {
 
     const productId = Number(form.productId);
     if (!productId) {
-      setSelectedProduct(null);
       return;
     }
 
-    setStockLoading(true);
+    let finishing = false;
+    const startTimer = window.setTimeout(() => {
+      if (!finishing) setStockLoading(true);
+    }, 0);
+    const errorTimer = window.setTimeout(() => setStockError(null), 0);
 
     async function refreshStock() {
       try {
         const product = await fetchProductById(productId);
         if (!cancelled) {
           setSelectedProduct(product);
+          setStockProductId(productId);
         }
       } catch {
         if (!cancelled) {
           setSelectedProduct(null);
+          setStockProductId(productId);
+          setStockError("No se pudo consultar el stock. Inténtalo de nuevo.");
         }
       } finally {
+        finishing = true;
+        window.clearTimeout(startTimer);
         if (!cancelled) setStockLoading(false);
       }
     }
@@ -149,18 +159,22 @@ export default function OutboundOrderPage() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(startTimer);
+      window.clearTimeout(errorTimer);
     };
-  }, [form.productId]);
+  }, [form.productId, stockRetry]);
+
+  const currentSelectedProduct = Number(form.productId) === stockProductId ? selectedProduct : null;
 
   // ======================================================================
   // Advertencia de stock insuficiente (validación client‑side)
   // ======================================================================
 
   const quantityExceedsStock = useMemo<boolean>(() => {
-    if (!selectedProduct || !form.quantity) return false;
+    if (!currentSelectedProduct || !form.quantity) return false;
     const qty = Number(form.quantity);
-    return !Number.isNaN(qty) && qty > selectedProduct.current_stock;
-  }, [selectedProduct, form.quantity]);
+    return !Number.isNaN(qty) && qty > currentSelectedProduct.current_stock;
+  }, [currentSelectedProduct, form.quantity]);
 
   // Actualizar campo individual
   function updateField<K extends keyof FormState>(field: K, value: FormState[K]) {
@@ -234,24 +248,11 @@ export default function OutboundOrderPage() {
           });
         }
         setForm(EMPTY_FORM);
-        setSelectedProduct(null);
         setSuccess(
           `Salida registrada correctamente: ${quantity} unidades de ${products.find((p) => p.id === productId)?.name ?? "producto"}.`,
         );
-      } catch (caught) {
-        const message =
-          caught instanceof Error ? caught.message : "Error al registrar la salida.";
-
-        // Si el error viene de la API por stock insuficiente, se muestra
-        // inline junto al campo de cantidad
-        if (
-          message.toLowerCase().includes("stock") &&
-          message.toLowerCase().includes("insufficient")
-        ) {
-          setQuantityFieldError(message);
-        } else {
-          setError(message);
-        }
+      } catch {
+        setError("No se pudo registrar la salida. Comprueba el stock y los datos e inténtalo de nuevo.");
       } finally {
         setSubmitting(false);
       }
@@ -353,6 +354,11 @@ export default function OutboundOrderPage() {
             <p className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-500">
               Cargando productos…
             </p>
+          ) : productsError ? (
+            <div role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              <p>{productsError}</p>
+              <button type="button" onClick={() => setProductsRetry((value) => value + 1)} className="mt-2 font-semibold underline">Reintentar carga</button>
+            </div>
           ) : (
             <select
               id="productId"
@@ -378,30 +384,33 @@ export default function OutboundOrderPage() {
           <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
             {stockLoading ? (
               <p className="text-xs text-slate-500">Consultando stock…</p>
-            ) : selectedProduct ? (
+            ) : currentSelectedProduct ? (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                   Stock actual
                 </span>
                 <span
                   className={`text-sm font-bold ${
-                    selectedProduct.current_stock <= 0
+                    currentSelectedProduct.current_stock <= 0
                       ? "text-rose-400"
-                      : selectedProduct.current_stock <= 10
+                      : currentSelectedProduct.current_stock <= 10
                         ? "text-amber-400"
-                        : selectedProduct.current_stock <= 50
+                        : currentSelectedProduct.current_stock <= 50
                           ? "text-sky-400"
                           : "text-emerald-400"
                   }`}
                 >
-                  {selectedProduct.current_stock}{" "}
+                  {currentSelectedProduct.current_stock}{" "}
                   <span className="text-xs font-normal text-slate-400">
-                    {selectedProduct.unit}
+                    {currentSelectedProduct.unit}
                   </span>
                 </span>
               </div>
             ) : (
-              <p className="text-xs text-rose-400">No se pudo obtener el stock.</p>
+              <div role="alert" className="text-xs text-rose-300">
+                <p>{stockError ?? "No se pudo obtener el stock."}</p>
+                <button type="button" onClick={() => setStockRetry((value) => value + 1)} className="mt-1 font-semibold underline">Reintentar consulta</button>
+              </div>
             )}
           </div>
         )}
@@ -448,7 +457,7 @@ export default function OutboundOrderPage() {
                 <circle cx="12" cy="12" r="10" />
               </svg>
               La cantidad ingresada ({form.quantity}) supera el stock disponible (
-              {selectedProduct?.current_stock ?? "?"} {selectedProduct?.unit ?? ""}
+              {currentSelectedProduct?.current_stock ?? "?"} {currentSelectedProduct?.unit ?? ""}
               ). La API rechazará la operación si el stock es insuficiente.
             </p>
           )}

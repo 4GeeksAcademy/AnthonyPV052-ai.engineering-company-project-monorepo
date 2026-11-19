@@ -48,6 +48,7 @@ export default function CandidateDetailsPage() {
   }, [params.id]);
 
   const [viewState, setViewState] = useState<ViewState>("loading");
+  const [reloadKey, setReloadKey] = useState(0);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -82,14 +83,10 @@ export default function CandidateDetailsPage() {
           getNotes(candidateId),
         ]);
 
-        if (!isMounted) {
-          return;
-        }
-
-        setCandidate(record);
-        setNotes(Array.isArray(candidateNotes) ? candidateNotes : []);
+            setViewState("error");
+            setErrorMessage("No se pudo cargar el detalle del candidato. Comprueba tu conexión e inténtalo de nuevo.");
         setViewState("success");
-      } catch (error) {
+      } catch {
         if (!isMounted) {
           return;
         }
@@ -108,7 +105,7 @@ export default function CandidateDetailsPage() {
     return () => {
       isMounted = false;
     };
-  }, [candidateId]);
+  }, [candidateId, reloadKey]);
 
   async function handleStatusChange(value: CandidateStatus) {
     if (!candidate) {
@@ -121,12 +118,8 @@ export default function CandidateDetailsPage() {
     try {
       const updated = await patchRecord(candidate.id, { status: value });
       setCandidate(updated);
-    } catch (error) {
-      setNotesError(
-        error instanceof Error
-          ? error.message
-          : "No se pudo actualizar el estado."
-      );
+    } catch {
+        setNotesError("No se pudo actualizar el estado. Comprueba la conexión e inténtalo de nuevo.");
     } finally {
       setIsPatchingStatus(false);
     }
@@ -143,12 +136,8 @@ export default function CandidateDetailsPage() {
     try {
       const updated = await patchRecord(candidate.id, { stage: value });
       setCandidate(updated);
-    } catch (error) {
-      setNotesError(
-        error instanceof Error
-          ? error.message
-          : "No se pudo actualizar la etapa."
-      );
+    } catch {
+      setNotesError("No se pudo actualizar la etapa. Comprueba la conexión e inténtalo de nuevo.");
     } finally {
       setIsPatchingStage(false);
     }
@@ -168,10 +157,8 @@ export default function CandidateDetailsPage() {
       const created = await createNote(candidate.id, noteContent.trim());
       setNotes((previous) => [created, ...previous]);
       setNoteContent("");
-    } catch (error) {
-      setNotesError(
-        error instanceof Error ? error.message : "No se pudo crear la nota."
-      );
+    } catch {
+      setNotesError("No se pudo crear la nota. Comprueba la conexión e inténtalo de nuevo.");
     } finally {
       setIsCreatingNote(false);
     }
@@ -188,10 +175,8 @@ export default function CandidateDetailsPage() {
     try {
       await deleteNote(candidate.id, noteId);
       setNotes((previous) => previous.filter((note) => note.id !== noteId));
-    } catch (error) {
-      setNotesError(
-        error instanceof Error ? error.message : "No se pudo eliminar la nota."
-      );
+    } catch {
+      setNotesError("No se pudo eliminar la nota. Comprueba la conexión e inténtalo de nuevo.");
     } finally {
       setDeletingNoteId(null);
     }
@@ -212,11 +197,7 @@ export default function CandidateDetailsPage() {
       setShowEditForm(false);
       setEditSuccess("Datos del candidato actualizados correctamente.");
     } catch (error) {
-      setEditError(
-        error instanceof Error
-          ? error.message
-          : "No se pudieron actualizar los datos del candidato."
-      );
+      setEditError("No se pudieron actualizar los datos. Comprueba la conexión e inténtalo de nuevo.");
     } finally {
       setIsUpdatingCandidate(false);
     }
@@ -241,12 +222,19 @@ export default function CandidateDetailsPage() {
         <section className="mx-auto w-full max-w-3xl rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700 shadow-sm">
           <h1 className="mb-2 text-xl font-bold">No pudimos cargar el candidato</h1>
           <p className="text-sm">
-            {errorMessage || "Intenta nuevamente en unos minutos."}
+            {errorMessage || "No pudimos consultar este registro. Comprueba tu conexión e inténtalo de nuevo."}
           </p>
           <button
             type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            className="mt-4 inline-flex h-10 items-center rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white"
+          >
+            Reintentar carga
+          </button>
+          <button
+            type="button"
             onClick={() => router.push("/listOfCandidates")}
-            className="mt-4 inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white"
+            className="ml-2 mt-4 inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white"
           >
             Volver al listado
           </button>

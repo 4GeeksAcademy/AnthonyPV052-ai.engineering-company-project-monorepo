@@ -25,7 +25,7 @@ export default function RegisterPage() {
       if (caughtError instanceof ApiError && caughtError.status === 409) {
         setError("Ya existe una cuenta con este email. Inicia sesión para continuar.");
       } else {
-        setError(caughtError instanceof Error ? caughtError.message : "No fue posible crear la cuenta.");
+        setError("No fue posible crear la cuenta. Comprueba los datos e inténtalo de nuevo.");
       }
     } finally {
       setIsSubmitting(false);

@@ -84,12 +84,8 @@ export default function ListOfCandidatesPage() {
       writeLocalCandidates(merged);
       setLoadingState("success");
     } catch (error) {
-      setLoadingState("error");
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "No se pudieron cargar las candidaturas."
-      );
+        setLoadingState("error");
+        setErrorMessage("No fue posible cargar las candidaturas. Comprueba tu conexión e inténtalo de nuevo.");
     }
   }
 
@@ -143,13 +139,9 @@ export default function ListOfCandidatesPage() {
         return merged;
       });
       setShowCreateForm(false);
-      setCreateSuccess("Candidato registrado correctamente.");
+        setCreateSuccess("Candidato registrado correctamente.");
     } catch (error) {
-      setCreateError(
-        error instanceof Error
-          ? error.message
-          : "No se pudo registrar el candidato."
-      );
+        setCreateError("No se pudo registrar el candidato. Revisa los datos e inténtalo de nuevo.");
     } finally {
       setIsCreating(false);
     }
@@ -291,7 +283,7 @@ export default function ListOfCandidatesPage() {
           <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
             Ocurrió un problema al consultar la API. Intenta nuevamente en unos
             minutos.
-            {errorMessage ? ` Detalle: ${errorMessage}` : ""}
+            {errorMessage ? ` ${errorMessage}` : ""}
             <div className="mt-3">
               <button
                 type="button"
@@ -326,8 +318,8 @@ export default function ListOfCandidatesPage() {
                     className="grid gap-3 px-4 py-4 md:grid-cols-[2fr_2fr_1.4fr_1.6fr_1fr] md:items-center"
                   >
                     <div>
-                      <p className="font-semibold text-slate-900">{candidate.name}</p>
-                      <p className="text-sm text-slate-500">{candidate.email}</p>
+                      <p className="font-semibold text-slate-900">{candidate.name ?? "Nombre no disponible"}</p>
+                      <p className="text-sm text-slate-500">{candidate.email ?? "Correo no disponible"}</p>
                     </div>
 
                     <p className="text-sm text-slate-700">
@@ -335,11 +327,11 @@ export default function ListOfCandidatesPage() {
                     </p>
 
                     <p className="text-sm font-medium text-slate-700">
-                      {statusTranslations[candidate.status]}
+                      {statusTranslations[candidate.status] ?? candidate.status ?? "Sin estado"}
                     </p>
 
                     <p className="text-sm text-slate-700">
-                      {stageTranslations[candidate.stage]}
+                      {stageTranslations[candidate.stage] ?? candidate.stage ?? "Sin etapa"}
                     </p>
 
                     <div>

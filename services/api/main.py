@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -69,6 +70,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="Brasaland Supplier Directory API", version="1.0.0", lifespan=lifespan)
+logger = logging.getLogger(__name__)
 
 
 @app.middleware("http")
@@ -308,14 +310,15 @@ def get_task_status(task_id: str, current_user: dict = Depends(get_current_user)
 
 @app.exception_handler(RequestValidationError)
 async def request_validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    error = exc.errors()[0]
-    location = error.get("loc", [])
+    errors = exc.errors()
+    first_error = errors[0] if errors else {}
+    location = first_error.get("loc", [])
     field = str(location[-1]) if location else "request"
-    error_type = error.get("type", "")
+    error_type = first_error.get("type", "")
     if error_type == "missing":
         message = "Este campo es obligatorio."
     elif "enum" in error_type:
-        message = "Contiene un valor no permitido."
+        message = "Selecciona una opción válida."
     else:
         message = str(error.get("msg", "El valor no es válido.")).replace("Value error, ", "")
     

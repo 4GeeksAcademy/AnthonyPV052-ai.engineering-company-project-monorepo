@@ -48,7 +48,7 @@ export default function LoginPage() {
       if (caughtError instanceof ApiError && caughtError.status === 401) {
         setError("El email o la contraseña no son correctos.");
       } else {
-        setError(caughtError instanceof Error ? caughtError.message : "No fue posible iniciar sesión.");
+        setError("No fue posible iniciar sesión. Comprueba tu conexión e inténtalo de nuevo.");
       }
     } finally {
       setIsSubmitting(false);
