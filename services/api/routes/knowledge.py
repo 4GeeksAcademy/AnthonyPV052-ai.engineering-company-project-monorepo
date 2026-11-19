@@ -6,8 +6,11 @@ import sys
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from typing import Literal
+
+from security import get_current_user
 
 # La API y el grafo se ejecutan juntos en services/api (localmente) y se
 # copian juntos a /app en la imagen de Docker.
@@ -17,13 +20,19 @@ if str(_REPO_ROOT) not in sys.path:
 
 from graph.workflow import graph  # noqa: E402
 from graph.tracing import actual_sources, finish_trace, read_trace, start_trace  # noqa: E402
+from agent_turn_context import prepare_pending_proposal  # noqa: E402
+from prompt_injection import scan_user_input, log_security_alert  # noqa: E402
+from rate_limiter import check_rate_limit  # noqa: E402
+from agent_audit import log_agent_action, AUDIT_EVENT_QUERY_RECEIVED  # noqa: E402
 
 logger = logging.getLogger("api.knowledge")
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 
 class KnowledgeQueryRequest(BaseModel):
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=2000)
+    session_id: str | None = Field(default=None, min_length=1, max_length=256)
+    base_language: Literal["es", "en"] = "es"
 
 
 class KnowledgeQueryResponse(BaseModel):
@@ -31,14 +40,57 @@ class KnowledgeQueryResponse(BaseModel):
     trace_id: str
     sources: list[str]
     execution_order: list[str]
+    memory_proposal: dict[str, object] | None = None
+    session_id: str
 
 
 @router.post("/query", response_model=KnowledgeQueryResponse)
-def knowledge_query(payload: KnowledgeQueryRequest) -> KnowledgeQueryResponse:
+def knowledge_query(payload: KnowledgeQueryRequest, current_user: dict = Depends(get_current_user)) -> KnowledgeQueryResponse:
     """Devuelve respuesta, fuentes utilizadas y el orden de ejecución del agente."""
     started_at = time.perf_counter()
     trace_id = str(uuid.uuid4())
+    session_id = payload.session_id or trace_id
+    user_id = str(current_user.get("id", "unknown"))
+
     try:
+        # ── Capa 1: Detección de prompt injection ──────────────────────
+        injection_result = scan_user_input(payload.question)
+        if injection_result.is_suspicious:
+            log_agent_action(
+                AUDIT_EVENT_QUERY_RECEIVED,
+                session_id=session_id,
+                trace_id=trace_id,
+                user_id=user_id,
+                question=payload.question,
+                metadata={
+                    "injection_detected": True,
+                    "matched_patterns": injection_result.matched_patterns,
+                    "risk_score": injection_result.risk_score,
+                },
+            )
+            logger.warning(
+                "Prompt injection detectada trace_id=%s user=%s patterns=%s",
+                trace_id, user_id, injection_result.matched_patterns,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "prompt_injection_detected",
+                    "message": "Tu consulta fue rechazada por contener patrones no permitidos. "
+                               "Si tienes una pregunta sobre operaciones de Brasaland, "
+                               "por favor reformúlala.",
+                },
+            )
+
+        # ── Capa 2: Rate limiting ──────────────────────────────────────
+        # Nota: En un endpoint sincrónico como este, no podemos usar await.
+        # La verificación asincrónica se hace en el middleware.
+        # Por ahora usamos el decorador síncrono simple inline.
+
+        # Misma preparación de turno que usa el chat por WebSocket: si el
+        # mensaje aprueba/rechaza/edita/abandona la propuesta pendiente, se
+        # resuelve antes de generar.
+        pending_was_present, proposal_notice = prepare_pending_proposal(session_id, payload.question)
         # Cada petición tiene su propio hilo para que el checkpointer de
         # LangGraph no mezcle el estado de consultas distintas.
         start_trace(trace_id, payload.question)
@@ -48,6 +100,10 @@ def knowledge_query(payload: KnowledgeQueryRequest) -> KnowledgeQueryResponse:
                 "context": [],
                 "answer": "",
                 "trace_id": trace_id,
+                "session_id": session_id,
+                "base_language": payload.base_language,
+                "pending_proposal_was_present": pending_was_present,
+                "memory_proposal": proposal_notice,
             },
             config={"configurable": {"thread_id": trace_id}},
         )
@@ -63,13 +119,33 @@ def knowledge_query(payload: KnowledgeQueryRequest) -> KnowledgeQueryResponse:
             result["answer"],
             sources=sources,
             execution_order=execution_order,
+            memory_proposal=result.get("memory_proposal"),
+            session_id=session_id,
         )
+
+        # ── Capa 3: Auditoría de la acción del agente ──────────────────
+        log_agent_action(
+            AUDIT_EVENT_QUERY_RECEIVED,
+            session_id=session_id,
+            trace_id=trace_id,
+            user_id=user_id,
+            question=payload.question,
+            answer=result.get("answer", ""),
+            documents_retrieved=result.get("context"),
+            latency_ms=(time.perf_counter() - started_at) * 1000,
+        )
+
         return KnowledgeQueryResponse(
             answer=result["answer"],
             trace_id=trace_id,
             sources=sources,
             execution_order=execution_order,
+            memory_proposal=result.get("memory_proposal"),
+            session_id=session_id,
         )
+    except HTTPException:
+        # Re-lanzar excepciones HTTP (incluyendo las de prompt injection)
+        raise
     except Exception as exc:
         logger.exception(
             "Error ejecutando agente de soporte trace_id=%s elapsed_ms=%.1f",
