@@ -2,11 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { clearToken } from "@/lib/auth";
+import { telemetry } from "@/services/telemetry";
 
 export default function LogoutButton() {
   const router = useRouter();
 
   function logout() {
+    telemetry.track("auth_logout", {
+      time_since_last_activity: 0,
+    });
     clearToken();
     router.replace("/auth/login");
   }

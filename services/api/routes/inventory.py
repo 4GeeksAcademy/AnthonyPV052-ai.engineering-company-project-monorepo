@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlmodel import Session, func, select
 
+from cache import cached, invalidate_cache
 from database import get_db
 from models import Ingredient, IngredientEntry, IngredientExit
 from schemas import (
@@ -15,6 +16,7 @@ from schemas import (
     IngredientResponse,
 )
 from security import get_current_user
+from telemetry_util import emit_telemetry_event
 
 router = APIRouter(
     prefix="/inventory",
@@ -63,7 +65,9 @@ def _build_ingredient_response(ingredient: Ingredient, db: Session) -> Ingredien
 
 
 @router.get("/products", response_model=list[IngredientResponse])
+@cached(ttl_seconds=30.0)  # TTL 30s: el stock solo cambia con entradas/salidas, no en cada consulta
 def list_products(
+    request: Request,
     country: str | None = Query(default=None, description="Filtrar por país: CO o US"),
     db: Session = Depends(get_db),
 ) -> list[IngredientResponse]:
@@ -90,6 +94,7 @@ def create_product(
     db.add(ingredient)
     db.commit()
     db.refresh(ingredient)
+    invalidate_cache("/inventory/products")
     return _build_ingredient_response(ingredient, db)
 
 
@@ -99,7 +104,9 @@ def create_product(
 
 
 @router.get("/products/{ingredient_id}", response_model=IngredientResponse)
+@cached(ttl_seconds=30.0)  # TTL 30s: mismo criterio que list_products
 def get_product(
+    request: Request,
     ingredient_id: int,
     db: Session = Depends(get_db),
 ) -> IngredientResponse:
@@ -143,6 +150,25 @@ def create_inbound_order(
     db.add(entry)
     db.commit()
     db.refresh(entry)
+    invalidate_cache("/inventory/products")
+    invalidate_cache("/inventory/orders")
+
+    # Emitir telemetría
+    country = ingredient.country
+    emit_telemetry_event(
+        "inbound_order_created",
+        user_id=current_user["id"],
+        properties={
+            "location_id": payload.location_id,
+            "country": country,
+            "product_id": payload.ingredient_id,
+            "product_category": ingredient.category,
+            "quantity": payload.quantity,
+            "unit": ingredient.unit,
+            "currency": "USD" if country == "US" else "COP",
+            "supplier_name": payload.supplier_name,
+        },
+    )
 
     return IngredientEntryResponse(
         id=entry.id,  # type: ignore[arg-type]
@@ -205,6 +231,48 @@ def create_outbound_order(
     db.add(exit_record)
     db.commit()
     db.refresh(exit_record)
+    invalidate_cache("/inventory/products")
+    invalidate_cache("/inventory/orders")
+
+    # Emitir telemetría
+    country = ingredient.country
+    event_type = "stock_waste_registered" if payload.reason == "waste" else "outbound_order_created"
+    telemetry_props: dict[str, object] = {
+        "location_id": payload.location_id,
+        "country": country,
+        "product_id": payload.ingredient_id,
+        "product_category": ingredient.category,
+        "quantity": payload.quantity,
+        "unit": ingredient.unit,
+        "currency": "USD" if country == "US" else "COP",
+    }
+    if payload.reason == "waste":
+        telemetry_props["reason"] = "kitchen_error"  # default; backend podría recibir razón real
+
+    emit_telemetry_event(
+        event_type,
+        user_id=current_user["id"],
+        properties=telemetry_props,
+    )
+
+    # Verificar umbral mínimo de stock
+    threshold_min = 10  # umbral por defecto; podría ser configurable por producto
+    new_stock = _compute_current_stock(ingredient_id=payload.ingredient_id, db=db)
+    if new_stock < threshold_min:
+        emit_telemetry_event(
+            "stock_threshold_triggered",
+            user_id=current_user["id"],
+            properties={
+                "location_id": payload.location_id,
+                "country": country,
+                "product_id": payload.ingredient_id,
+                "product_category": ingredient.category,
+                "current_stock": new_stock,
+                "threshold_min": threshold_min,
+                "unit": ingredient.unit,
+                "currency": "USD" if country == "US" else "COP",
+            },
+        )
 
     return IngredientExitResponse(
         id=exit_record.id,  # type: ignore[arg-type]
@@ -223,7 +291,9 @@ def create_outbound_order(
 
 
 @router.get("/orders", response_model=list[IngredientOrderEntry])
+@cached(ttl_seconds=30.0)  # TTL 30s: las órdenes cambian con entradas/salidas
 def list_orders(
+    request: Request,
     ingredient_id: int | None = Query(default=None, description="Filtrar por ingrediente"),
     db: Session = Depends(get_db),
 ) -> list[IngredientOrderEntry]:

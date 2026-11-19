@@ -60,6 +60,118 @@ ai-engineering-company-project-template/
 
 ---
 
+## Run locally without Docker
+
+The Brasaland backend can be started locally with Redis and Qdrant instead of
+Docker. The commands below assume Linux, `uv`, and a Python version supported
+by `services/api/pyproject.toml` are installed.
+
+### 1. Install backend dependencies
+
+From the repository root:
+
+```bash
+cd services/api
+uv sync
+```
+
+Make sure `services/api/.env` contains the required application settings. In
+particular, the RAG query endpoint uses `LLM_GATEWAY`, `LLM_API_KEY`,
+`EMBED_MODEL`, and `GEN_MODEL` when they are configured.
+
+### 2. Start Redis
+
+In a separate terminal:
+
+```bash
+redis-server --daemonize yes --bind 127.0.0.1 --port 6379
+redis-cli ping                    # expected: PONG
+```
+
+### 3. Start Qdrant
+
+Download the Qdrant binary once from the repository root, then start it in a
+separate terminal:
+
+```bash
+mkdir -p .local/bin .local/qdrant
+curl -L --fail --silent --show-error \
+	https://github.com/qdrant/qdrant/releases/download/v1.15.5/qdrant-x86_64-unknown-linux-gnu.tar.gz \
+	| tar -xz -C .local/bin
+
+QDRANT__STORAGE__STORAGE_PATH="$PWD/.local/qdrant" \
+	.local/bin/qdrant --uri http://127.0.0.1:6333
+```
+
+```bash
+set -a && . ./services/api/.env && set +a
+
+QDRANT_URL=http://127.0.0.1:6333 \
+  services/api/.venv/bin/python - <<'PY'
+from data.pipelines.rag import setup
+
+print(setup())
+PY
+```
+
+
+Qdrant is available at `http://127.0.0.1:6333`.
+
+### 4. Start the API
+
+In another terminal, from `services/api`:
+
+```bash
+cd services/api
+set -a && . ./.env && set +a
+REDIS_URL=redis://127.0.0.1:6379/0 \
+QDRANT_URL=http://127.0.0.1:6333 \
+	uv run uvicorn main:app --reload --host 127.0.0.1 --port 8020
+```
+
+The API is available at `http://127.0.0.1:8020`. Verify it with:
+
+```bash
+curl http://127.0.0.1:8020/health
+```
+
+### 5. Start Celery and Flower (optional)
+
+Celery is required for asynchronous pipeline tasks. Run the worker in a
+separate terminal:
+
+```bash
+cd services/api
+REDIS_URL=redis://127.0.0.1:6379/0 \
+	uv run celery -A celery_app worker --loglevel=INFO -E
+```
+
+Flower is optional and provides a task monitor at `http://127.0.0.1:5555`:
+
+```bash
+cd services/api
+REDIS_URL=redis://127.0.0.1:6379/0 \
+	uv run python -m flower \
+	--broker=redis://127.0.0.1:6379/0 flower \
+	--port=5555 --address=127.0.0.1
+```
+
+The knowledge-base query endpoint is then available at:
+
+```text
+POST http://127.0.0.1:8020/knowledge/query
+```
+
+For example:
+
+```bash
+curl -X POST http://127.0.0.1:8020/knowledge/query \
+	-H 'Content-Type: application/json' \
+	-d '{"question":"¿Cuál es el protocolo de alérgenos?"}'
+```
+
+---
+
 ## Milestones (reference)
 
 | Milestone | Focus        | Typical deliverables                        |

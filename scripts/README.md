@@ -19,5 +19,9 @@ python scripts/seed_incidents.py --validate-only
 python scripts/seed_incidents.py
 ```
 
-Returns exit code `1` for I/O or CSV structure errors, `2` when one or more rows
-are invalid, and `0` when validation/import completes without invalid rows.
+## `nightly_export.py`
+
+Exporta la telemetría del día anterior, ejecuta el pipeline y registra la
+corrida en `job_runs`. Es un proceso independiente de FastAPI; el cron externo
+y las variables necesarias están documentados en
+[`docs/nightly-export.md`](../docs/nightly-export.md).

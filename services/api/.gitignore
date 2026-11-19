@@ -2,5 +2,6 @@
 __pycache__/
 routes/__pycache__/
 data/*.json
+data/celery_dlq.log
 .env
 node_modules/
